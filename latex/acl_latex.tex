@@ -195,92 +195,299 @@ Test-Time Preference Optimization further explores iterative textual feedback fo
 Different from previous methods that optimize generated responses or model behaviors, TAGS applies textual feedback to a new optimization target: adversarial contexts for robustness enhancement. 
 Specifically, the target RALM's responses provide evaluation signals for ranking candidate contexts, while contrastive feedback between candidates guides subsequent adversarial context optimization. 
 Parameter learning occurs only after context synthesis, through supervised fine-tuning on the selected adversarial contexts.
-
-
 \section{Method}
+
+We propose TAGS (Textual-Gradient-Guided Adversarial Context Synthesis), a framework for improving the robustness of Retrieval-Augmented Language Models (RALMs). 
+The key idea of TAGS is to dynamically synthesize query-specific adversarial contexts based on model feedback and transform the discovered weaknesses into effective robustness supervision.
+
+TAGS consists of two stages:
+(1) adversarial context synthesis, where a frozen auxiliary attacker model generates and optimizes challenging retrieval contexts through textual gradients;
+(2) robust fine-tuning, where the target RALM is optimized using the synthesized contexts.
+
+During adversarial context synthesis, all model parameters remain frozen. 
+Parameter updates are only performed in the subsequent supervised fine-tuning stage.
+
+
 \subsection{Problem Definition}
 
-Given a query $q$, retrieved context $\mathcal{R}(q)$, and reference answer $y^*$, TAGS aims to construct adversarial contexts that improve the robustness of Retrieval-Augmented Language Models (RALMs).
+Given a query $q$, a retrieved context $\mathcal{R}_{K}(q)$, and a reference answer $y^*$, TAGS aims to construct adversarial contexts that improve the robustness of RALMs under noisy and difficult retrieval scenarios.
 
-Here, adversarial contexts refer to semantically modified retrieval contexts that preserve answer-supporting evidence while increasing the difficulty for the target RALM to exploit such evidence.
+An adversarial context $d$ is defined as a semantically modified version of the original retrieval context $\mathcal{R}_{K}(q)$ that preserves answer-supporting evidence while increasing the difficulty for the target RALM to effectively utilize such evidence.
 
-Different from malicious retrieval attacks, such as corpus poisoning or targeted retrieval manipulation, TAGS focuses on simulating realistic retrieval failures, including evidence dilution, information reordering, and distracting contexts.
+Unlike malicious retrieval attacks, TAGS focuses on realistic retrieval failures, including evidence dilution, information reordering, and distracting contexts. 
+Therefore, adversarial contexts are designed to challenge evidence utilization rather than remove or inject unsupported knowledge.
+
+
+\subsection{Textual-Gradient-Guided Adversarial Context Synthesis}
+
+Given a training instance $(q,\mathcal{R}_{K}(q),y^*)$, TAGS first employs a frozen auxiliary attacker model $A_{\phi}$ to generate candidate adversarial contexts.
+
+\paragraph{Initial context generation.}
+
+The attacker receives the query, reference answer, and the complete retrieved context, and generates an initial candidate set:
+
+\begin{equation}
+\mathcal{D}^{(0)}_q
+=
+\{d^{(0)}_1,\ldots,d^{(0)}_n\},
+\end{equation}
+
+where
+
+\begin{equation}
+d^{(0)}_i
+\sim
+A_{\phi}(\cdot|q,\mathcal{R}_{K}(q),y^*).
+\end{equation}
+
+Each candidate $d_i$ contains a semantic rewrite of the complete top-$K$ retrieved context. 
+The attacker is instructed to preserve factual correctness and answer-supporting evidence while introducing challenges such as paraphrasing, information reordering, and evidence dilution.
+
+
+\paragraph{Context evaluation and reward modeling.}
+
+For each candidate adversarial context $d_i^{(t)}$, the frozen target RALM generates:
+
+\begin{equation}
+y_i^{(t)}
+=
+f_{\theta}(q,d_i^{(t)}).
+\end{equation}
+
+The original retrieval context $\mathcal{R}_{K}(q)$ is not provided together with $d_i^{(t)}$, preventing the target RALM from bypassing the synthesized context by directly accessing the original evidence.
+
+We evaluate each candidate using a weighted reward:
+
+\begin{equation}
+\begin{aligned}
+r(d_i,y_i,y^*)=
+&\alpha r_{\mathrm{ans}}(y_i,y^*)\\
+&+\beta r_{\mathrm{unc}}(y_i;q,d_i)\\
+&+\gamma r_{\mathrm{evid}}(q,d_i,y^*).
+\end{aligned}
+\end{equation}
+
 \begin{figure*}[t]
   \centering
-  \includegraphics[width=\linewidth]{latex/framework_优化.pdf}
-  \caption{Overview of offline synthesis, supervised fine-tuning, and inference. Stage I scores complete top-$K$ context rewrites with a frozen target RALM and uses contrastive textual feedback to guide a frozen attacker. Only candidates passing the evidence check are eligible for final training-data selection. Stage II fine-tunes the target with LoRA. Prediction uses only the retriever and fine-tuned target model.}
+  \includegraphics[width=\linewidth]{latex/v3.pdf}
+  \caption{Overview of TAGS.
+TAGS first synthesizes query-specific adversarial contexts through an iterative generation--evaluation--feedback process.
+A frozen auxiliary attacker model generates candidate contexts, and textual gradients derived from contrastive feedback guide context optimization.
+The selected adversarial contexts are then used for LoRA-based robust fine-tuning of the target RALM.
+During inference, only the retriever and the fine-tuned RALM are required.}
   \label{fig:framework}
 \end{figure*}
+The three components are defined as:
 
-Figure~\ref{fig:framework} summarizes the pipeline. A labeled training instance is $(q,\mathcal{R}_{K}(q),y^*)$, where $q$ is a query, $\mathcal{R}_{K}(q)=[p_1,\ldots,p_K]$ is the complete top-$K$ retrieved context, and $y^*$ is the reference answer. Stage~I uses an attacker $A_{\phi}$ and a target RALM $f_{\theta}$ with fixed parameters. Stage~II trains LoRA adapters for the target RALM on the selected contexts.
-
-\subsection{Stage I: Textual-Gradient-Guided Context Synthesis}
-
-\paragraph{Initial candidates.}
-The attacker receives the query, reference answer, and a serialization of all $K$ retrieved passages. It generates an initial pool of $n$ evidence-preserving rewrites:
 \begin{equation}
-\begin{aligned}
-\mathcal{D}^{(0)}_q&=\{d^{(0)}_1,\ldots,d^{(0)}_n\},\\
-d^{(0)}_i&\sim A_{\phi}(\cdot\mid q,\mathcal{R}_{K}(q),y^*).
-\end{aligned}
-\end{equation}
-Each $d_i$ contains a rewrite of all $K$ retrieved passages and is evaluated as one complete context. The attacker is instructed to preserve facts and answer-supporting evidence while paraphrasing, reordering, or redistributing information across those passages. These instructions define the intended perturbation; the final evidence check determines which candidates are eligible for training.
-
-\paragraph{Target-model response and reward.}
-For every candidate $d_i^{(t)}$, the frozen target RALM generates
-\begin{equation}
-y_i^{(t)} = f_{\theta}(q,d_i^{(t)}).
-\end{equation}
-The original context $\mathcal{R}_{K}(q)$ is not supplied alongside $d_i^{(t)}$; otherwise, the target could bypass the rewrite and copy explicit evidence from the original passages. We score a candidate using its generated response and the reference answer:
-\begin{equation}
-\begin{aligned}
-r(q,d_i,y_i,y^*) ={}& \alpha\,r_{\mathrm{ans}}(y_i,y^*) \\
-&+ \beta\,r_{\mathrm{conf}}(y_i;q,d_i) \\
-&+ \gamma\,r_{\mathrm{evid}}(q,d_i,y^*).
-\end{aligned}
-\label{eq:reward}
-\end{equation}
-The three terms capture complementary requirements:
-\begin{align}
 r_{\mathrm{ans}}(y_i,y^*)
-  &= -\bigl(\operatorname{EM}(y_i,y^*)+\operatorname{F1}(y_i,y^*)\bigr),\\
-r_{\mathrm{conf}}(y_i;q,d_i)
-  &= \log\bigl(1+\operatorname{PPL}_{\theta}(y_i\mid q,d_i)\bigr),\\
-r_{\mathrm{evid}}(q,d_i,y^*)
-  &= \mathbb{I}\!\left[J(q,d_i,y^*)=\textsc{Yes}\right].
-\end{align}
-The answer term favors target-model failures. The confidence term uses the perplexity of the target's generated response as an uncertainty proxy, rather than a calibrated confidence estimate. The evidence term records whether a frozen judge $J$ finds support for the reference answer in the candidate context. These terms determine candidate ranking; a high total reward alone does not guarantee evidence preservation. Final selection additionally requires the candidate to pass the evidence check. We use fixed weights across datasets: $\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$, without dataset-specific tuning.
+=
+-\left(
+EM(y_i,y^*)+F1(y_i,y^*)
+\right),
+\end{equation}
 
-\paragraph{Contrastive textual feedback.}
-At iteration $t$, the cache $\mathcal{C}^{(t)}_q$ contains the candidates evaluated so far. Each candidate is stored with its target response and reward from Equation~\ref{eq:reward}; $r(d)$ below abbreviates this score for the current query and reference answer. We select
+which encourages contexts that cause the target RALM to deviate from the reference answer.
+
+
 \begin{equation}
-d^{+}_t=\arg\max_{d\in\mathcal{C}^{(t)}_q}r(d),\qquad
-d^{-}_t=\arg\min_{d\in\mathcal{C}^{(t)}_q}r(d).
+r_{\mathrm{unc}}(y_i;q,d_i)
+=
+\log
+(1+PPL_{\theta}(y_i|q,d_i)),
 \end{equation}
-Here $d^{+}_t$ and $d^{-}_t$ are the highest- and lowest-reward cached contexts. Their ranking does not by itself establish eligibility for final selection. A frozen feedback model compares the pair and produces a textual gradient
+
+which measures generation uncertainty under the candidate context.
+
+
 \begin{equation}
-g^{(t)}_{\mathrm{text}}
-=G(q,\mathcal{R}_{K}(q),d^{+}_t,d^{-}_t),
+r_{\mathrm{evid}}(q,d_i,y^*)
+=
+\mathbb{I}
+[J(q,d_i,y^*)=\textsc{Yes}],
 \end{equation}
-which explains what makes the stronger candidate more disruptive without proposing factual changes. Conditioned on $d^{+}_t$ and $g^{(t)}_{\mathrm{text}}$, the attacker generates $N$ new candidates:
+
+which ensures that the candidate context still contains sufficient evidence supporting the reference answer.
+
+The final reward balances three objectives:
+inducing generation difficulty, increasing model uncertainty, and preserving answer-supporting evidence.
+We use fixed weights across datasets:
+$\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$.
+
+
+\paragraph{Contrastive textual gradient optimization.}
+
+At iteration $t$, TAGS maintains a candidate cache $\mathcal{C}^{(t)}_q$ containing previously evaluated contexts.
+
+The highest- and lowest-reward contexts are selected:
+
+\begin{equation}
+d_t^+
+=
+\arg\max_{d\in\mathcal{C}^{(t)}_q}r(d),
+\end{equation}
+
+
+\begin{equation}
+d_t^-
+=
+\arg\min_{d\in\mathcal{C}^{(t)}_q}r(d).
+\end{equation}
+
+
+A frozen feedback model compares the two contexts and generates a textual gradient:
+
+\begin{equation}
+g_{\mathrm{text}}^{(t)}
+=
+G(q,\mathcal{R}_{K}(q),d_t^+,d_t^-),
+\end{equation}
+
+where the textual gradient describes why $d_t^+$ is more challenging than $d_t^-$ while maintaining factual correctness.
+
+Conditioned on the current best context and textual gradient, the attacker generates new candidates:
+
 \begin{equation}
 \mathcal{D}^{(t+1)}_q
-=\{d^{(t+1)}_j\}_{j=1}^{N}
-\sim A_{\phi}(\cdot\mid d^{+}_t,g^{(t)}_{\mathrm{text}}).
+=
+\{d_j^{(t+1)}\}_{j=1}^{N}
+\sim
+A_{\phi}
+(\cdot|d_t^+,g_{\mathrm{text}}^{(t)}).
 \end{equation}
-Here $n$ is the initial pool size and $N$ is the number of new candidates per synthesis round. The textual gradient guides a prompt-based update to the context, with no parameter updates. Let $\mathcal{C}_q$ be the final cache of evaluated candidates and let $\mathcal{V}_q$ contain those that pass the final evidence-preservation check. Selection is restricted to this eligible subset: \begin{equation} d^*\in\arg\max_{d\in\mathcal{V}_q} r(d),\qquad \mathcal{V}_q\subseteq\mathcal{C}_q. \label{eq:final_selection}\end{equation} Thus, a candidate that fails the check cannot be selected solely because of a high reward. Appendix~\ref{sec:synthesis_algorithm} summarizes the procedure.
 
-\subsection{Stage II: Supervised Robust Fine-Tuning}
-The selected triples $(q,d^*,y^*)$ form the offline fine-tuning set $\mathcal{D}_{\mathrm{SFT}}$. We train the target RALM's LoRA adapters with the standard supervised objective
+This iterative generation--evaluation--feedback process continues until the synthesized contexts converge.
+
+
+\subsection{Robust Fine-tuning}
+
+After adversarial context synthesis, TAGS selects the highest-quality context:
+
 \begin{equation}
-\mathcal{L}_{\mathrm{SFT}}
-=-\mathbb{E}_{(q,d^*,y^*)\sim\mathcal{D}_{\mathrm{SFT}}}
-\left[\log p_{\theta}(y^*\mid q,d^*)\right].
+d^*
+=
+\arg\max_{d\in\mathcal{V}_q}r(d),
 \end{equation}
-This objective trains the model to produce the reference answer from the selected difficult context. The attacker and feedback models are not involved in this stage or in deployment.
+
+where $\mathcal{V}_q$ denotes candidates passing the evidence-preservation check.
+
+The selected triples:
+
+\begin{equation}
+(q,d^*,y^*)
+\end{equation}
+
+form the supervised fine-tuning dataset.
+
+We optimize the target RALM using LoRA with the standard supervised objective:
+
+\begin{equation}
+\mathcal{L}_{SFT}
+=
+-
+\mathbb{E}_{(q,d^*,y^*)}
+[
+\log p_{\theta}(y^*|q,d^*)
+].
+\end{equation}
+
+During this stage, only the target RALM parameters are updated.
+The auxiliary attacker model and feedback model remain frozen.
+
 
 \subsection{Train--Test Separation}
-Context synthesis, synthesis rewards, candidate selection, and LoRA updates use only training instances and their reference answers. Held-out queries do not enter either training stage. At prediction time, the fine-tuned RALM receives the query and retrieved context, without a reference answer, attacker calls, or parameter updates. Reference answers are used separately to construct the common context-sufficient evaluation subset and to compute EM and F1, as described in Section~\ref{sec:exp_settings}. These evaluation uses do not feed back into synthesis or training.
+
+All adversarial context synthesis, reward computation, textual gradient generation, and LoRA updates are performed exclusively on training instances.
+
+Held-out evaluation queries are never involved in context synthesis or model optimization.
+
+During inference, TAGS only requires the retriever and the fine-tuned target RALM.
+No attacker model, textual gradient generation, reference answer, or additional parameter update is involved.
+
+% \section{Method}
+% \subsection{Problem Definition}
+
+% Given a query $q$, retrieved context $\mathcal{R}(q)$, and reference answer $y^*$, TAGS aims to construct adversarial contexts that improve the robustness of Retrieval-Augmented Language Models (RALMs).
+
+% Here, adversarial contexts refer to semantically modified retrieval contexts that preserve answer-supporting evidence while increasing the difficulty for the target RALM to exploit such evidence.
+
+% Different from malicious retrieval attacks, such as corpus poisoning or targeted retrieval manipulation, TAGS focuses on simulating realistic retrieval failures, including evidence dilution, information reordering, and distracting contexts.
+% \begin{figure*}[t]
+%   \centering
+%   \includegraphics[width=\linewidth]{latex/framework_优化.pdf}
+%   \caption{Overview of offline synthesis, supervised fine-tuning, and inference. Stage I scores complete top-$K$ context rewrites with a frozen target RALM and uses contrastive textual feedback to guide a frozen attacker. Only candidates passing the evidence check are eligible for final training-data selection. Stage II fine-tunes the target with LoRA. Prediction uses only the retriever and fine-tuned target model.}
+%   \label{fig:framework}
+% \end{figure*}
+
+% Figure~\ref{fig:framework} summarizes the pipeline. A labeled training instance is $(q,\mathcal{R}_{K}(q),y^*)$, where $q$ is a query, $\mathcal{R}_{K}(q)=[p_1,\ldots,p_K]$ is the complete top-$K$ retrieved context, and $y^*$ is the reference answer. Stage~I uses an attacker $A_{\phi}$ and a target RALM $f_{\theta}$ with fixed parameters. Stage~II trains LoRA adapters for the target RALM on the selected contexts.
+
+% \subsection{Stage I: Textual-Gradient-Guided Context Synthesis}
+
+% \paragraph{Initial candidates.}
+% The attacker receives the query, reference answer, and a serialization of all $K$ retrieved passages. It generates an initial pool of $n$ evidence-preserving rewrites:
+% \begin{equation}
+% \begin{aligned}
+% \mathcal{D}^{(0)}_q&=\{d^{(0)}_1,\ldots,d^{(0)}_n\},\\
+% d^{(0)}_i&\sim A_{\phi}(\cdot\mid q,\mathcal{R}_{K}(q),y^*).
+% \end{aligned}
+% \end{equation}
+% Each $d_i$ contains a rewrite of all $K$ retrieved passages and is evaluated as one complete context. The attacker is instructed to preserve facts and answer-supporting evidence while paraphrasing, reordering, or redistributing information across those passages. These instructions define the intended perturbation; the final evidence check determines which candidates are eligible for training.
+
+% \paragraph{Target-model response and reward.}
+% For every candidate $d_i^{(t)}$, the frozen target RALM generates
+% \begin{equation}
+% y_i^{(t)} = f_{\theta}(q,d_i^{(t)}).
+% \end{equation}
+% The original context $\mathcal{R}_{K}(q)$ is not supplied alongside $d_i^{(t)}$; otherwise, the target could bypass the rewrite and copy explicit evidence from the original passages. We score a candidate using its generated response and the reference answer:
+% \begin{equation}
+% \begin{aligned}
+% r(q,d_i,y_i,y^*) ={}& \alpha\,r_{\mathrm{ans}}(y_i,y^*) \\
+% &+ \beta\,r_{\mathrm{conf}}(y_i;q,d_i) \\
+% &+ \gamma\,r_{\mathrm{evid}}(q,d_i,y^*).
+% \end{aligned}
+% \label{eq:reward}
+% \end{equation}
+% The three terms capture complementary requirements:
+% \begin{align}
+% r_{\mathrm{ans}}(y_i,y^*)
+%   &= -\bigl(\operatorname{EM}(y_i,y^*)+\operatorname{F1}(y_i,y^*)\bigr),\\
+% r_{\mathrm{conf}}(y_i;q,d_i)
+%   &= \log\bigl(1+\operatorname{PPL}_{\theta}(y_i\mid q,d_i)\bigr),\\
+% r_{\mathrm{evid}}(q,d_i,y^*)
+%   &= \mathbb{I}\!\left[J(q,d_i,y^*)=\textsc{Yes}\right].
+% \end{align}
+% The answer term favors target-model failures. The confidence term uses the perplexity of the target's generated response as an uncertainty proxy, rather than a calibrated confidence estimate. The evidence term records whether a frozen judge $J$ finds support for the reference answer in the candidate context. These terms determine candidate ranking; a high total reward alone does not guarantee evidence preservation. Final selection additionally requires the candidate to pass the evidence check. We use fixed weights across datasets: $\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$, without dataset-specific tuning.
+
+% \paragraph{Contrastive textual feedback.}
+% At iteration $t$, the cache $\mathcal{C}^{(t)}_q$ contains the candidates evaluated so far. Each candidate is stored with its target response and reward from Equation~\ref{eq:reward}; $r(d)$ below abbreviates this score for the current query and reference answer. We select
+% \begin{equation}
+% d^{+}_t=\arg\max_{d\in\mathcal{C}^{(t)}_q}r(d),\qquad
+% d^{-}_t=\arg\min_{d\in\mathcal{C}^{(t)}_q}r(d).
+% \end{equation}
+% Here $d^{+}_t$ and $d^{-}_t$ are the highest- and lowest-reward cached contexts. Their ranking does not by itself establish eligibility for final selection. A frozen feedback model compares the pair and produces a textual gradient
+% \begin{equation}
+% g^{(t)}_{\mathrm{text}}
+% =G(q,\mathcal{R}_{K}(q),d^{+}_t,d^{-}_t),
+% \end{equation}
+% which explains what makes the stronger candidate more disruptive without proposing factual changes. Conditioned on $d^{+}_t$ and $g^{(t)}_{\mathrm{text}}$, the attacker generates $N$ new candidates:
+% \begin{equation}
+% \mathcal{D}^{(t+1)}_q
+% =\{d^{(t+1)}_j\}_{j=1}^{N}
+% \sim A_{\phi}(\cdot\mid d^{+}_t,g^{(t)}_{\mathrm{text}}).
+% \end{equation}
+% Here $n$ is the initial pool size and $N$ is the number of new candidates per synthesis round. The textual gradient guides a prompt-based update to the context, with no parameter updates. Let $\mathcal{C}_q$ be the final cache of evaluated candidates and let $\mathcal{V}_q$ contain those that pass the final evidence-preservation check. Selection is restricted to this eligible subset: \begin{equation} d^*\in\arg\max_{d\in\mathcal{V}_q} r(d),\qquad \mathcal{V}_q\subseteq\mathcal{C}_q. \label{eq:final_selection}\end{equation} Thus, a candidate that fails the check cannot be selected solely because of a high reward. Appendix~\ref{sec:synthesis_algorithm} summarizes the procedure.
+
+% \subsection{Stage II: Supervised Robust Fine-Tuning}
+% The selected triples $(q,d^*,y^*)$ form the offline fine-tuning set $\mathcal{D}_{\mathrm{SFT}}$. We train the target RALM's LoRA adapters with the standard supervised objective
+% \begin{equation}
+% \mathcal{L}_{\mathrm{SFT}}
+% =-\mathbb{E}_{(q,d^*,y^*)\sim\mathcal{D}_{\mathrm{SFT}}}
+% \left[\log p_{\theta}(y^*\mid q,d^*)\right].
+% \end{equation}
+% This objective trains the model to produce the reference answer from the selected difficult context. The attacker and feedback models are not involved in this stage or in deployment.
+
+% \subsection{Train--Test Separation}
+% Context synthesis, synthesis rewards, candidate selection, and LoRA updates use only training instances and their reference answers. Held-out queries do not enter either training stage. At prediction time, the fine-tuned RALM receives the query and retrieved context, without a reference answer, attacker calls, or parameter updates. Reference answers are used separately to construct the common context-sufficient evaluation subset and to compute EM and F1, as described in Section~\ref{sec:exp_settings}. These evaluation uses do not feed back into synthesis or training.
 \section{Experimental Settings}
 
 
