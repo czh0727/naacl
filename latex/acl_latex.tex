@@ -1,0 +1,671 @@
+\documentclass[11pt]{article}
+
+% Change "review" to "final" to generate the final (sometimes called camera-ready) version.
+% Change to "preprint" to generate a non-anonymous version with page numbers.
+\usepackage[review]{acl}
+
+% Standard package includes
+\usepackage{times}
+\usepackage{latexsym}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{booktabs} 
+% For proper rendering and hyphenation of words containing Latin characters (including in bib files)
+\usepackage[T1]{fontenc}
+% For Vietnamese characters
+% \usepackage[T5]{fontenc}
+% See https://www.latex-project.org/help/documentation/encguide.pdf for other character sets
+
+% This assumes your files are encoded as UTF8
+\usepackage[utf8]{inputenc}
+
+% This is not strictly necessary, and may be commented out,
+% but it will improve the layout of the manuscript,
+% and will typically save some space.
+\usepackage{microtype}
+
+% This is also not strictly necessary, and may be commented out.
+% However, it will improve the aesthetics of text in
+% the typewriter font.
+\usepackage{inconsolata}
+
+%Including images in your LaTeX document requires adding
+%additional package(s)
+\usepackage{graphicx}
+
+% If the title and author information does not fit in the area allocated, uncomment the following
+%
+%\setlength\titlebox{<dim>}
+%
+% and set <dim> to something 5cm or larger.
+
+\title{Robust Retrieval-Augmented Generation via Textual-Gradient-Guided Adversarial Data Synthesis}
+
+% Author information can be set in various styles:
+% For several authors from the same institution:
+% \author{Author 1 \and ... \and Author n \\
+%         Address line \\ ... \\ Address line}
+% if the names do not fit well on one line use
+%         Author 1 \\ {\bf Author 2} \\ ... \\ {\bf Author n} \\
+% For authors from different institutions:
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \And  ... \And
+%         Author n \\ Address line \\ ... \\ Address line}
+% To start a separate ``row'' of authors use \AND, as in
+% \author{Author 1 \\ Address line \\  ... \\ Address line
+%         \AND
+%         Author 2 \\ Address line \\ ... \\ Address line \And
+%         Author 3 \\ Address line \\ ... \\ Address line}
+
+\author{First Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  Affiliation / Address line 3 \\
+  \texttt{email@domain} \\\And
+  Second Author \\
+  Affiliation / Address line 1 \\
+  Affiliation / Address line 2 \\
+  Affiliation / Address line 3 \\
+  \texttt{email@domain} \\}
+
+%\author{
+%  \textbf{First Author\textsuperscript{1}},
+%  \textbf{Second Author\textsuperscript{1,2}},
+%  \textbf{Third T. Author\textsuperscript{1}},
+%  \textbf{Fourth Author\textsuperscript{1}},
+%\\
+%  \textbf{Fifth Author\textsuperscript{1,2}},
+%  \textbf{Sixth Author\textsuperscript{1}},
+%  \textbf{Seventh Author\textsuperscript{1}},
+%  \textbf{Eighth Author \textsuperscript{1,2,3,4}},
+%\\
+%  \textbf{Ninth Author\textsuperscript{1}},
+%  \textbf{Tenth Author\textsuperscript{1}},
+%  \textbf{Eleventh E. Author\textsuperscript{1,2,3,4,5}},
+%  \textbf{Twelfth Author\textsuperscript{1}},
+%\\
+%  \textbf{Thirteenth Author\textsuperscript{3}},
+%  \textbf{Fourteenth F. Author\textsuperscript{2,4}},
+%  \textbf{Fifteenth Author\textsuperscript{1}},
+%  \textbf{Sixteenth Author\textsuperscript{1}},
+%\\
+%  \textbf{Seventeenth S. Author\textsuperscript{4,5}},
+%  \textbf{Eighteenth Author\textsuperscript{3,4}},
+%  \textbf{Nineteenth N. Author\textsuperscript{2,5}},
+%  \textbf{Twentieth Author\textsuperscript{1}}
+%\\
+%\\
+%  \textsuperscript{1}Affiliation 1,
+%  \textsuperscript{2}Affiliation 2,
+%  \textsuperscript{3}Affiliation 3,
+%  \textsuperscript{4}Affiliation 4,
+%  \textsuperscript{5}Affiliation 5
+%\\
+%  \small{
+%    \textbf{Correspondence:} \href{mailto:email@domain}{email@domain}
+%  }
+%}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+Retrieval-augmented language models (RALMs) can fail even when the retrieved context contains sufficient evidence: relevant information may be scattered, paraphrased, or obscured by distractors. We propose textual-gradient-guided adversarial data synthesis to improve robustness to these difficult contexts. A frozen attacker rewrites the complete retrieved context, and a frozen target RALM answers from each candidate. Contrasting high- and low-reward candidates produces natural-language feedback that guides subsequent rewrites. For each training query, we select the highest-reward candidate that passes an evidence-preservation check and use it for supervised LoRA fine-tuning. Synthesis uses labeled training data; the resulting model performs ordinary retrieval-augmented inference without the attacker or parameter updates. Across five question-answering evaluation sets, the method achieves the highest reported EM and F1 point estimates among the compared systems and improves performance under increasing retrieval noise. Ablations show that the benefits of textual feedback vary across datasets. These results support the use of target-model feedback for constructing difficult, answer-supporting training contexts. Code is available at \url{https://anonymous.4open.science/r/TTT_ttlr}.
+\end{abstract}
+
+\section{Introduction}
+Retrieval-augmented generation (RAG) conditions a language model on external documents to support knowledge-intensive tasks such as open-domain question answering \cite{chen-etal-2017-reading,lewis2020retrieval,guu2020retrieval}. This design can address gaps in a model's parametric knowledge, but retrieving relevant information does not ensure that the model will use it correctly \cite{ji2023survey,gao2023retrieval}.
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=\linewidth]{1.pdf}
+  \caption{Sensitivity analysis on Natural Questions. Left: performance as retrieval depth $k$ increases. Right: performance as answer-supporting documents are progressively replaced by low-ranked distractors.}
+  \label{fig:retrieval_sensitivity}
+\end{figure}
+A generator can overlook supporting evidence when it is scattered across passages, expressed indirectly, or surrounded by semantically related distractors \cite{cuconasu2024power,shi2023large,yoran2023making}. Figure~\ref{fig:retrieval_sensitivity} illustrates how answer quality changes with retrieval depth and the replacement of high-ranked passages by lower-ranked distractors. These settings motivate a distinction between the availability of evidence and the generator's ability to use it.
+
+Existing methods improve context use through relevance reasoning, robustness-oriented fine-tuning, and adaptive adversarial training \cite{CoN,instructrag,RbFT,RAAT,ATM}. We investigate a complementary question: can natural-language feedback from a target model guide the construction of difficult training contexts while preserving the evidence needed to answer the query? The key design choice is to optimize the context itself, using the target model's responses to guide successive rewrites before fine-tuning.
+
+We propose \emph{textual-gradient-guided adversarial data synthesis}. A frozen attacker rewrites the complete top-$K$ context for each training query. A frozen target RALM answers from each rewrite, and a reward combines answer failure, response uncertainty, and an evidence-preservation signal. Contrasting high- and low-reward candidates yields a natural-language critique, or textual gradient \cite{textgrad}, that guides the next synthesis round. For each query, the highest-reward candidate that passes the evidence check is paired with the reference answer for supervised LoRA fine-tuning.
+
+The synthesis loop operates only on labeled training instances and keeps model parameters fixed. Its outputs become an offline supervision set for the target RALM. At inference, held-out queries follow the usual retrieve-then-read pipeline without the attacker or parameter updates.
+
+Our contributions are threefold:
+\begin{itemize}
+    \item We formulate full-context adversarial data synthesis as a search for rewrites that challenge a target RALM while passing an answer-evidence check.
+    \item We develop a textual-gradient optimization loop that converts target-model failures into actionable feedback for refining full-context rewrites, without updating either model during synthesis.
+    \item We evaluate the resulting RALM on five question-answering evaluation sets and under progressively increasing retrieval noise, and analyze the effects of contrastive selection, synthesis iterations, and reward components.
+\end{itemize}
+\section{Related Work}
+
+\subsection{Robustness of Retrieval-Augmented Generation}
+Irrelevant or difficult-to-use passages can degrade answer generation, and semantically related distractors can be particularly harmful \cite{shi2023large,cuconasu2024power,amiraz-etal-2025-distracting}. RetRobust trains with relevant and irrelevant contexts \cite{yoran2023making}; other approaches use note-based relevance reasoning \cite{CoN} or instruction and rationale tuning \cite{instructrag}. RbFT combines defect detection and answer generation using sampled or synthetically corrupted contexts \cite{RbFT}. RAAT uses adaptive adversarial training with noise recognition \cite{RAAT}, while ATM iteratively optimizes an attacker and an answer generator \cite{ATM}. Our method instead uses textual feedback to revise contexts with frozen models, then fine-tunes the answer generator on the selected examples.
+
+\subsection{Textual Feedback and Data Synthesis}
+TextGrad uses natural-language feedback to optimize text-valued variables \cite{textgrad}. Test-Time Preference Optimization applies iterative textual feedback to revise model responses at inference \cite{tpo}. We apply this feedback principle to a different variable: a retrieved context used to construct training data. The target RALM's responses inform candidate ranking, and contrasting candidates guides subsequent context rewrites. Parameter learning occurs only after synthesis, through supervised fine-tuning on the selected contexts.
+
+\subsection{Positioning and Scope}
+Here, \emph{adversarial} describes context rewrites designed to make answer-supporting evidence harder for the target RALM to use. The intended changes include paraphrase, reordering, and evidence dilution, subject to an evidence-preservation check. Our experiments evaluate noisy and difficult retrieval contexts; they do not establish robustness to corpus poisoning, malicious evidence injection, or targeted attacks on the retriever.
+
+\section{Method}
+\begin{figure*}[t]
+  \centering
+  \includegraphics[width=\linewidth]{latex/framework_优化.pdf}
+  \caption{Overview of offline synthesis, supervised fine-tuning, and inference. Stage I scores complete top-$K$ context rewrites with a frozen target RALM and uses contrastive textual feedback to guide a frozen attacker. Only candidates passing the evidence check are eligible for final training-data selection. Stage II fine-tunes the target with LoRA. Prediction uses only the retriever and fine-tuned target model.}
+  \label{fig:framework}
+\end{figure*}
+
+Figure~\ref{fig:framework} summarizes the pipeline. A labeled training instance is $(q,\mathcal{R}_{K}(q),y^*)$, where $q$ is a query, $\mathcal{R}_{K}(q)=[p_1,\ldots,p_K]$ is the complete top-$K$ retrieved context, and $y^*$ is the reference answer. Stage~I uses an attacker $A_{\phi}$ and a target RALM $f_{\theta}$ with fixed parameters. Stage~II trains LoRA adapters for the target RALM on the selected contexts.
+
+\subsection{Stage I: Textual-Gradient-Guided Context Synthesis}
+
+\paragraph{Initial candidates.}
+The attacker receives the query, reference answer, and a serialization of all $K$ retrieved passages. It generates an initial pool of $n$ evidence-preserving rewrites:
+\begin{equation}
+\begin{aligned}
+\mathcal{D}^{(0)}_q&=\{d^{(0)}_1,\ldots,d^{(0)}_n\},\\
+d^{(0)}_i&\sim A_{\phi}(\cdot\mid q,\mathcal{R}_{K}(q),y^*).
+\end{aligned}
+\end{equation}
+Each $d_i$ contains a rewrite of all $K$ retrieved passages and is evaluated as one complete context. The attacker is instructed to preserve facts and answer-supporting evidence while paraphrasing, reordering, or redistributing information across those passages. These instructions define the intended perturbation; the final evidence check determines which candidates are eligible for training.
+
+\paragraph{Target-model response and reward.}
+For every candidate $d_i^{(t)}$, the frozen target RALM generates
+\begin{equation}
+y_i^{(t)} = f_{\theta}(q,d_i^{(t)}).
+\end{equation}
+The original context $\mathcal{R}_{K}(q)$ is not supplied alongside $d_i^{(t)}$; otherwise, the target could bypass the rewrite and copy explicit evidence from the original passages. We score a candidate using its generated response and the reference answer:
+\begin{equation}
+\begin{aligned}
+r(q,d_i,y_i,y^*) ={}& \alpha\,r_{\mathrm{ans}}(y_i,y^*) \\
+&+ \beta\,r_{\mathrm{conf}}(y_i;q,d_i) \\
+&+ \gamma\,r_{\mathrm{evid}}(q,d_i,y^*).
+\end{aligned}
+\label{eq:reward}
+\end{equation}
+The three terms capture complementary requirements:
+\begin{align}
+r_{\mathrm{ans}}(y_i,y^*)
+  &= -\bigl(\operatorname{EM}(y_i,y^*)+\operatorname{F1}(y_i,y^*)\bigr),\\
+r_{\mathrm{conf}}(y_i;q,d_i)
+  &= \log\bigl(1+\operatorname{PPL}_{\theta}(y_i\mid q,d_i)\bigr),\\
+r_{\mathrm{evid}}(q,d_i,y^*)
+  &= \mathbb{I}\!\left[J(q,d_i,y^*)=\textsc{Yes}\right].
+\end{align}
+The answer term favors target-model failures. The confidence term uses the perplexity of the target's generated response as an uncertainty proxy, rather than a calibrated confidence estimate. The evidence term records whether a frozen judge $J$ finds support for the reference answer in the candidate context. These terms determine candidate ranking; a high total reward alone does not guarantee evidence preservation. Final selection additionally requires the candidate to pass the evidence check. We use fixed weights across datasets: $\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$, without dataset-specific tuning.
+
+\paragraph{Contrastive textual feedback.}
+At iteration $t$, the cache $\mathcal{C}^{(t)}_q$ contains the candidates evaluated so far. Each candidate is stored with its target response and reward from Equation~\ref{eq:reward}; $r(d)$ below abbreviates this score for the current query and reference answer. We select
+\begin{equation}
+d^{+}_t=\arg\max_{d\in\mathcal{C}^{(t)}_q}r(d),\qquad
+d^{-}_t=\arg\min_{d\in\mathcal{C}^{(t)}_q}r(d).
+\end{equation}
+Here $d^{+}_t$ and $d^{-}_t$ are the highest- and lowest-reward cached contexts. Their ranking does not by itself establish eligibility for final selection. A frozen feedback model compares the pair and produces a textual gradient
+\begin{equation}
+g^{(t)}_{\mathrm{text}}
+=G(q,\mathcal{R}_{K}(q),d^{+}_t,d^{-}_t),
+\end{equation}
+which explains what makes the stronger candidate more disruptive without proposing factual changes. Conditioned on $d^{+}_t$ and $g^{(t)}_{\mathrm{text}}$, the attacker generates $N$ new candidates:
+\begin{equation}
+\mathcal{D}^{(t+1)}_q
+=\{d^{(t+1)}_j\}_{j=1}^{N}
+\sim A_{\phi}(\cdot\mid d^{+}_t,g^{(t)}_{\mathrm{text}}).
+\end{equation}
+Here $n$ is the initial pool size and $N$ is the number of new candidates per synthesis round. The textual gradient guides a prompt-based update to the context, with no parameter updates. Let $\mathcal{C}_q$ be the final cache of evaluated candidates and let $\mathcal{V}_q$ contain those that pass the final evidence-preservation check. Selection is restricted to this eligible subset: \begin{equation} d^*\in\arg\max_{d\in\mathcal{V}_q} r(d),\qquad \mathcal{V}_q\subseteq\mathcal{C}_q. \label{eq:final_selection}\end{equation} Thus, a candidate that fails the check cannot be selected solely because of a high reward. Appendix~\ref{sec:synthesis_algorithm} summarizes the procedure.
+
+\subsection{Stage II: Supervised Robust Fine-Tuning}
+The selected triples $(q,d^*,y^*)$ form the offline fine-tuning set $\mathcal{D}_{\mathrm{SFT}}$. We train the target RALM's LoRA adapters with the standard supervised objective
+\begin{equation}
+\mathcal{L}_{\mathrm{SFT}}
+=-\mathbb{E}_{(q,d^*,y^*)\sim\mathcal{D}_{\mathrm{SFT}}}
+\left[\log p_{\theta}(y^*\mid q,d^*)\right].
+\end{equation}
+This objective trains the model to produce the reference answer from the selected difficult context. The attacker and feedback models are not involved in this stage or in deployment.
+
+\subsection{Train--Test Separation}
+Context synthesis, synthesis rewards, candidate selection, and LoRA updates use only training instances and their reference answers. Held-out queries do not enter either training stage. At prediction time, the fine-tuned RALM receives the query and retrieved context, without a reference answer, attacker calls, or parameter updates. Reference answers are used separately to construct the common context-sufficient evaluation subset and to compute EM and F1, as described in Section~\ref{sec:exp_settings}. These evaluation uses do not feed back into synthesis or training.
+\section{Experimental Settings}
+
+
+\subsection{Tasks, Datasets, and RAG Setup}
+\label{sec:exp_settings}
+We evaluate on Natural Questions (NQ) \cite{kwiatkowski2019natural}, PopQA \cite{popqa}, HotpotQA \cite{hotpotqa}, 2WikiMultiHopQA \cite{2wqa}, and the DAE difficult-context evaluation set. DAE is held out from synthesis, candidate selection, and model updates. All systems use a common retrieve-then-read pipeline implemented with FlashRAG \cite{Flash}, the \texttt{e5-base-v2} dense retriever, and top-$K$ retrieval with $K=5$. We report exact match (EM) and token-level F1.
+
+Following prior work, we apply one common context-sufficiency filter and evaluate every method on exactly the same retained instances \cite{joren2024sufficient}. The filter removes examples for which the retrieved context does not support the reference answer, allowing the analysis to isolate whether the generator can use available evidence rather than whether retrieval found it. No retained evaluation instance is used for synthesis or fine-tuning. Table~\ref{tab:dataset_stats} reports the resulting sizes.
+
+\begin{table}[b]
+\centering
+\small
+\begin{tabular}{lrr}
+\toprule
+\textbf{Dataset} & \textbf{Test} & \textbf{Retain} \\
+\midrule
+\text{Natural Questions} (\text{NQ}) & 3,610 & 982 \\
+\text{PopQA} & 1,399 & 751 \\
+\text{HotpotQA} & 7,404 & 348 \\
+\text{2WikiMultiHopQA} & 12,576 & 210 \\
+\text{DAE} & 982 & 774 \\
+\bottomrule
+\end{tabular}
+\caption{Statistics of the evaluated datasets after context sufficiency filtering. ``Test'' denotes the original test set size, and ``Retain'' denotes the number of instances retained for evaluation.}
+\label{tab:dataset_stats}
+\end{table}
+
+\subsection{Training and Evaluation Protocol}
+Adversarial context synthesis uses $3{,}000$ labeled instances sampled exclusively from the \emph{training} splits of NQ and HotpotQA. Synthesis prompts, reward computation, textual feedback, candidate selection, and LoRA updates are confined to those instances. Validation and test examples are excluded from synthesis and fine-tuning. The reward weights and optimization settings are fixed across datasets and are not selected using test performance. All reported held-out answers are generated after training, without further parameter updates.
+
+\subsection{Retrieval Noise Construction and Robustness Evaluation Settings}
+\begin{table}[b]
+  \centering
+  \caption{Retrieval noise settings with progressively increasing distractor ratios.}
+  \label{tab:noise_setting}
+  \setlength{\tabcolsep}{15pt}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{cl}
+  \toprule
+  \textbf{Setting} & \textbf{Retrieved Context} \\
+  \midrule
+  0 & Top1--5 \\
+  1 & Top1--4 + Rank50 \\
+  2 & Top1--3 + Rank49--50 \\
+  3 & Top1--2 + Rank48--50 \\
+  4 & Top1 + Rank47--50 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+\label{sec:noise_setting}
+For each query, we retrieve the top-50 documents and keep the number of input documents fixed at five. We then progressively replace high-ranked documents with documents from ranks 47--50, producing the five settings in Table~\ref{tab:noise_setting}. These low-ranked documents remain semantically close to the query under the same retriever but are less likely to contain answer-supporting evidence, so they serve as naturally retrieved distractors rather than synthetic malicious content. We apply this controlled evaluation to NQ, PopQA, HotpotQA, and 2WikiMultiHopQA.
+\begin{table*}[t]
+\caption{Held-out robustness comparison across five QA benchmarks. Best results in each column are shown in bold. $^*$ marks a significant improvement over LLaMA3.2-3B under a two-sided paired $t$-test on per-example scores ($p<0.05$).}
+\label{tab:rag_robustness}
+\centering
+\small
+\setlength{\tabcolsep}{5pt}
+\renewcommand{\arraystretch}{1.05}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}lcccccccccc}
+\toprule
+\textbf{Model} 
+& \multicolumn{2}{c}{\textbf{NQ}} 
+& \multicolumn{2}{c}{\textbf{POPQA}} 
+& \multicolumn{2}{c}{\textbf{DAE}} 
+& \multicolumn{2}{c}{\textbf{HotpotQA}} 
+& \multicolumn{2}{c}{\textbf{2WikiMultiHopQA}} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}\cmidrule(lr){8-9}\cmidrule(lr){10-11}
+& EM & F1 & EM & F1 & EM & F1 & EM & F1 & EM & F1 \\
+\midrule
+LLaMA3.2-3B  & 0.441 & 0.573 & 0.667 & 0.765 & 0.052 & 0.157 & 0.434 & 0.555 & 0.414 & 0.501 \\
+LLaMA3-8B    & 0.426 & 0.566 & 0.642 & 0.772 & 0.169 & 0.315 & 0.402 & 0.549 & 0.290 & 0.438 \\
+Qwen3-4B     & 0.241 & 0.417 & 0.601 & 0.715 & 0.071 & 0.232 & 0.402 & 0.549 & 0.286 & 0.457 \\
+Qwen3-8B     & 0.333 & 0.496 & 0.587 & 0.732 & 0.097 & 0.205 & 0.483 & 0.612 & 0.470 & 0.563 \\
+RbFT         & 0.485 & 0.586 & 0.579 & 0.661 & 0.371 & 0.490 & 0.480 & 0.595 & 0.390 & 0.469 \\
+ATM          & 0.470 & 0.598 & 0.419 & 0.486 & 0.264 & 0.389 & 0.250 & 0.336 & 0.176 & 0.242 \\
+RAAT         & 0.382 & 0.483 & 0.704 & 0.747 & 0.161 & 0.275 & 0.394 & 0.500 & 0.405 & 0.480 \\
+\midrule
+\textbf{Ours} 
+& \textbf{0.506}$^{*}$ & \textbf{0.625}$^{*}$ 
+& \textbf{0.727}$^{*}$ & \textbf{0.804}$\,$ 
+& \textbf{0.513}$^{*}$ & \textbf{0.663}$^{*}$ 
+& \textbf{0.486}$\,$ & \textbf{0.629}$^{*}$ 
+& \textbf{0.524}$\,$ & \textbf{0.619}$^{*}$ \\
+\bottomrule
+\end{tabular*}
+\end{table*}
+
+\subsection{Baselines}
+\label{subsec:baselines}
+We compare against representative instruction-tuned LLaMA and Qwen models \cite{llama3,qwen3} and three robustness-oriented RAG methods: RbFT \cite{RbFT}, ATM \cite{ATM}, and RAAT \cite{RAAT}. All rows share the retriever, retrieved inputs, answer prompt, decoding procedure, context-sufficiency filter, and metrics. The robustness-training methods use LLaMA-3.2-3B-Instruct as the target backbone; the standalone LLaMA and Qwen rows are backbone controls and therefore retain their stated model sizes.
+
+For trainable baselines, we follow the number of training examples and LoRA recipe reported by the corresponding original paper, including rank, scaling factor, learning rate, batch size, epochs, maximum sequence length, optimizer, and scheduler. This protocol compares complete published methods under a controlled test pipeline; it does not claim equal offline training compute. Appendix~\ref{sec:appendix_a} provides further configuration details.
+
+
+\section{Results and Analysis}
+We organize the analysis around five research questions:
+\begin{itemize}
+    \item \textbf{RQ1:} How does the proposed training procedure compare with existing robustness methods?
+    \item \textbf{RQ2:} How does performance change as retrieval noise increases?
+    \item \textbf{RQ3:} Does contrasting the strongest and weakest context rewrites improve synthesis?
+    \item \textbf{RQ4:} How sensitive is performance to the number of synthesis iterations?
+    \item \textbf{RQ5:} What does textual feedback contribute beyond fixed feedback?
+\end{itemize}
+
+
+\begin{figure}[t]
+  \centering
+  \includegraphics[width=\linewidth]{rag_robustness.pdf}
+  \caption{F1 as the number of low-ranked distractors increases on NQ, HotpotQA, 2WikiMultiHopQA, and PopQA. All methods receive the same retrieved contexts at each noise level.}
+  \label{fig:robustness_results}
+\end{figure}
+\subsection{Comparison with Robustness Training Baselines}
+\label{subsec:static_comparison}
+Table~\ref{tab:rag_robustness} reports held-out EM and F1. Our method has the highest point estimate in every column, with the largest gains on DAE. The significance markers compare against LLaMA3.2-3B; they do not establish significance against every robustness baseline. These results evaluate the complete synthesis-and-fine-tuning procedure. Because the methods follow different published training recipes, this comparison does not isolate the effect of synthesis under an equal training budget.
+\begin{table}[t]
+  \caption{Effect of contrastive adversarial context selection. Comparison between the Best-vs-Worst (\text{B-vs-W}) and Best-vs-2ndBest (\text{B-vs-2ndB}) strategies. $\Delta$ denotes the relative performance change (\%).}
+  \label{tab:contrastive_ablation}
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{@{}p{2.3cm} c c c r@{}}
+  \toprule
+  \textbf{Dataset} & \textbf{Metric} & \textbf{B-vs-W} & \textbf{B-vs-2ndB} & $\mathbf{\Delta}$ \textbf{(\%)} \\
+  \midrule
+  Natural Questions
+   & EM & 0.498 & 0.492 & -1.20 \\
+   & F1 & 0.611 & 0.610 & -0.16 \\
+  \midrule
+  PopQA
+   & EM & 0.711 & 0.703 & -1.13 \\
+   & F1 & 0.775 & 0.773 & -0.26 \\
+  \midrule
+  DAE
+   & EM & 0.390 & 0.366 & -6.15 \\
+   & F1 & 0.501 & 0.478 & -4.59 \\
+  \midrule
+  HotpotQA
+   & EM & 0.506 & 0.489 & -3.36 \\
+   & F1 & 0.642 & 0.625 & -2.65 \\
+  \midrule
+  \shortstack[l]{2WikiMultiHop\\QA}
+   & EM & 0.471 & 0.471 & 0.00 \\
+   & F1 & 0.566 & 0.571 & +0.88 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \caption{Impact of offline synthesis iterations on DAE. Synthesis uses the fixed $3,000$-instance training set. Best Score is an internal synthesis indicator; EM and F1 measure held-out answer quality.}
+  \label{tab:iteration_dae}
+  \centering
+  \setlength{\tabcolsep}{5pt}
+  \renewcommand{\arraystretch}{1.08}
+  \begin{tabular}{@{}c c c c@{}}
+  \toprule
+  \textbf{\# Iterations} & \textbf{Best Score} & \textbf{EM} & \textbf{F1} \\
+  \midrule
+  1 & 0.478 & 0.367 & 0.482 \\
+  2 & 0.505 & 0.380 & 0.501 \\
+  3 & 0.538 & 0.390 & 0.501 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+
+
+\subsection{Overall Robustness under Increasing Retrieval Noise}
+\label{subsec:overall_robustness}
+
+To address \textbf{RQ2}, we progressively replace high-ranked documents with low-ranked distractors, yielding Settings~0--4 in Table~\ref{tab:noise_setting}.
+
+Figure~\ref{fig:robustness_results} reports the F1 performance across four benchmarks.
+F1 generally decreases as more high-ranked documents are replaced by distractors, illustrating sensitivity to retrieval quality.
+Vanilla RAG suffers the largest decline, especially on multi-hop datasets such as HotpotQA and 2WikiMultihopQA, while robustness-oriented methods partially alleviate this issue.
+
+Our method remains competitive across the noise range on NQ, HotpotQA, and PopQA and is strongest under severe noise in Settings~3--4. RbFT performs better on 2WikiMultiHopQA, so the advantage is not universal. The overall pattern nevertheless indicates that training on target-aware difficult contexts reduces degradation under evidence dilution without changing the test-time pipeline.
+\begin{table*}[t]
+  \caption{Ablation study on different reward signaling strategies. We report EM and F1 scores across five QA benchmarks. Bold font indicates the best performance.}
+  \label{tab:reward_ablation}
+  \centering
+  \small
+  \setlength{\tabcolsep}{12pt}
+  \renewcommand{\arraystretch}{1.15}
+  \begin{tabular}{@{}l c ccccc@{}}
+  \toprule
+  \textbf{Strategy} & \textbf{Metric} & \textbf{NQ} & \textbf{PopQA} & \textbf{DAE} & \textbf{HotpotQA} & \textbf{2WikiMultiHopQA} \\
+  \midrule
+  w/o evidence
+   & EM & 0.489 & 0.709 & 0.497 & 0.448 & 0.489 \\
+   & F1 & 0.620 & 0.787 & 0.630 & 0.602 & 0.608 \\
+  \midrule
+  w/o uncertainty
+   & EM & 0.495 & 0.718 & 0.494 & 0.440 & 0.486 \\
+   & F1 & 0.611 & 0.792 & 0.651 & 0.615 & 0.574 \\
+  \midrule
+  w/o answer
+   & EM & 0.503 & 0.715 & \textbf{0.513} & 0.481 & \textbf{0.524} \\
+   & F1 & 0.619 & 0.798 &0.655 & 0.624 & 0.612 \\
+  \midrule
+  \textbf{Full model}
+   & EM & \textbf{0.506} & \textbf{0.727} & \textbf{0.513} & \textbf{0.486} & \textbf{0.524} \\
+   & F1 & \textbf{0.625} & \textbf{0.804} & \textbf{0.663} & \textbf{0.629} & \textbf{0.619} \\
+  \bottomrule
+  \end{tabular}
+\end{table*}
+\subsection{Effect of Contrastive Adversarial Contexts}
+\label{subsec:contrastive_effect}
+
+To address \textbf{RQ3}, we compare two contrastive pair construction strategies: \textit{Best-vs-Worst}, which contrasts the strongest and weakest adversarial contexts, and \textit{Best-vs-2ndBest}, which contrasts the two strongest adversarial contexts.
+
+Best-vs-Worst is better on eight of ten dataset--metric combinations and tied on one; the only reversal is 2WikiMultiHopQA F1. The largest relative differences occur on DAE and HotpotQA. These results favor the wider contrast in most reported comparisons, but do not establish that it is uniformly optimal or directly measure feedback quality.
+
+\subsection{Impact of Synthesis Iterations}
+\label{subsec:iteration_effect}
+
+To address \textbf{RQ4}, we vary the number of offline textual-gradient iterations.
+As shown in Table~\ref{tab:iteration_dae}, EM consistently improves from $0.367$ to $0.390$ as the number of iterations increases, while most F1 gains are achieved after the second iteration ($0.482 \to 0.501$).
+
+We additionally track the \emph{Best Score}, an internal synthesis indicator.
+Because the cache retains previously evaluated candidates, its maximum score can increase simply by considering more candidates. This trend alone does not establish improved context quality or feedback quality; held-out EM and F1 provide the relevant downstream evidence.
+Overall, a small number of synthesis rounds captures most of the observed gain; these are offline text updates, not test-time model updates.
+
+
+\subsection{Role of Textual Feedback}
+\label{subsec:textual_gradients}
+\begin{table}[t]
+  \caption{Effect of textual gradients. We compare the full method with a fixed-feedback variant; $\Delta$ is the relative change from fixed feedback to the full method (\%).}
+  \label{tab:textgrad_delta}
+  \centering
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \renewcommand{\arraystretch}{1.1}
+  \begin{tabular}{@{}p{2.3cm} c c c r@{}}
+  \toprule
+  \textbf{Dataset} & \textbf{Metric} & \textbf{TextGrad} & \textbf{Fixed} & $\mathbf{\Delta}$ \textbf{(\%)} \\
+  \midrule
+  Natural Questions
+   & EM & 0.498 & 0.503 & -0.99 \\
+   & F1 & 0.611 & 0.596 & +2.52 \\
+  \midrule
+  PopQA
+   & EM & 0.711 & 0.712 & -0.14 \\
+   & F1 & 0.775 & 0.784 & -1.15 \\
+  \midrule
+  DAE
+   & EM & 0.390 & 0.363 & +7.44 \\
+   & F1 & 0.501 & 0.478 & +4.81 \\
+  \midrule
+  HotpotQA
+   & EM & 0.506 & 0.486 & +4.12 \\
+   & F1 & 0.642 & 0.635 & +1.10 \\
+  \midrule
+  \shortstack[l]{2WikiMultiHop\\QA}
+   & EM & 0.471 & 0.476 & -1.05 \\
+   & F1 & 0.566 & 0.563 & +0.53 \\
+  \bottomrule
+  \end{tabular}
+\end{table}
+To address \textbf{RQ5}, we replace pair-specific textual gradients with the same fixed instruction at every synthesis step. Table~\ref{tab:textgrad_delta} shows the clearest benefit on DAE and HotpotQA, where TextGrad improves both EM and F1. Results are mixed on NQ, PopQA, and 2WikiMultiHopQA: the full method improves some metrics but slightly reduces others. Thus, the evidence supports textual feedback most strongly for the more difficult-context evaluations, not as an across-the-board improvement.
+
+\subsection{Ablation Study on Reward Signaling Strategies}
+
+Table~\ref{tab:reward_ablation} reports the ablation results of different reward components.
+The full reward is best or tied on every dataset--metric combination, but the component effects differ by dataset. Removing evidence preservation causes the largest F1 losses on DAE and HotpotQA, whereas removing the uncertainty term has the largest F1 effect on 2WikiMultiHopQA. Removing the answer term produces smaller or tied EM changes on some datasets but consistently lowers F1. These results support complementarity while avoiding the stronger, unsupported claim that every component improves every individual metric.
+
+\subsection{Deployment-Time Efficiency}
+The Qwen3-32B attacker is used only during offline synthesis. After LoRA fine-tuning, prediction uses the target LLaMA-3.2-3B RALM and its adapter weights through the usual retrieve-then-read pipeline. Table~\ref{tab:inference_time} reports wall-clock inference times on the same NQ test set, retrieval configuration, and hardware. Our method has the shortest observed time in this run. This is a measurement of the deployed model, not a claim of a faster inference algorithm: synthesis, scoring, and textual-feedback calls are absent from prediction. The table excludes offline synthesis and fine-tuning costs, so it cannot establish lower total computational cost.
+
+\begin{table}[t]
+  \centering
+  \small
+  \caption{Total NQ inference time under a shared retrieval and hardware configuration. The relative column is measured against our method.}
+  \label{tab:inference_time}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Method} & \textbf{Time (s)} & \textbf{Relative} \\
+    \midrule
+    Ours & 132.53 & -- \\
+    RbFT & 146.22 & +10.3\% \\
+    ATM & 150.65 & +13.7\% \\
+    LLaMA-3.2-3B-Instruct & 198.14 & +49.7\% \\
+    RAAT & 219.73 & +65.8\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+\section{Conclusion}
+We introduced textual-gradient-guided adversarial data synthesis for robust retrieval-augmented generation. Frozen models iteratively construct and assess complete context rewrites, and the highest-reward candidates that pass an evidence check become supervision for LoRA fine-tuning. The resulting RALM requires no synthesis or adaptation during prediction. Experiments show improved held-out answer quality under the evaluated noisy and difficult-context settings, while ablations reveal that the effects of textual feedback vary across datasets. The findings motivate target-aware context construction as an offline training strategy; robustness to stronger malicious attacks remains untested.
+
+
+% \subsection{Citations}
+
+% \begin{table*}
+%   \centering
+%   \begin{tabular}{lll}
+%     \hline
+%     \textbf{Output}           & \textbf{natbib command} & \textbf{ACL only command} \\
+%     \hline
+%     \citep{Gusfield:97}       & \verb|\citep|           &                           \\
+%     \citealp{Gusfield:97}     & \verb|\citealp|         &                           \\
+%     \citet{Gusfield:97}       & \verb|\citet|           &                           \\
+%     \citeyearpar{Gusfield:97} & \verb|\citeyearpar|     &                           \\
+%     \citeposs{Gusfield:97}    &                         & \verb|\citeposs|          \\
+%     \hline
+%   \end{tabular}
+%   \caption{\label{citation-guide}
+%     Citation commands supported by the style file.
+%     The style is based on the natbib package and supports all natbib citation commands.
+%     It also supports commands defined in previous ACL style files for compatibility.
+%   }
+% \end{table*}
+
+% Table~\ref{citation-guide} shows the syntax supported by the style files.
+% We encourage you to use the natbib styles.
+% You can use the command \verb|\citet| (cite in text) to get ``author (year)'' citations, like this citation to a paper by \citet{Gusfield:97}.
+% You can use the command \verb|\citep| (cite in parentheses) to get ``(author, year)'' citations \citep{Gusfield:97}.
+% You can use the command \verb|\citealp| (alternative cite without parentheses) to get ``author, year'' citations, which is useful for using citations within parentheses (e.g. \citealp{Gusfield:97}).
+
+% A possessive citation can be made with the command \verb|\citeposs|.
+% This is not a standard natbib command, so it is generally not compatible
+% with other style files.
+
+% \subsection{References}
+
+% \nocite{Ando2005,andrew2007scalable,rasooli-tetrault-2015}
+
+% The \LaTeX{} and Bib\TeX{} style files provided roughly follow the American Psychological Association format.
+% If your own bib file is named \texttt{custom.bib}, then placing the following before any appendices in your \LaTeX{} file will generate the references section for you:
+% \begin{quote}
+% \begin{verbatim}
+% \bibliography{custom}
+% \end{verbatim}
+% \end{quote}
+
+% You can obtain the complete ACL Anthology as a Bib\TeX{} file from \url{https://aclweb.org/anthology/anthology.bib.gz}.
+% To include both the Anthology and your own .bib file, use the following instead of the above.
+% \begin{quote}
+% \begin{verbatim}
+% \bibliography{anthology,custom}
+% \end{verbatim}
+% \end{quote}
+
+% Please see Section~\ref{sec:bibtex} for information on preparing Bib\TeX{} files.
+
+% \subsection{Equations}
+
+% An example equation is shown below:
+% \begin{equation}
+%   \label{eq:example}
+%   A = \pi r^2
+% \end{equation}
+
+% Labels for equation numbers, sections, subsections, figures and tables
+% are all defined with the \verb|\label{label}| command and cross references
+% to them are made with the \verb|\ref{label}| command.
+
+% This an example cross-reference to Equation~\ref{eq:example}.
+
+% \subsection{Appendices}
+
+% Use \verb|\appendix| before any appendix section to switch the section numbering over to letters. See Appendix~\ref{sec:appendix} for an example.
+
+% \section{Bib\TeX{} Files}
+% \label{sec:bibtex}
+
+% Unicode cannot be used in Bib\TeX{} entries, and some ways of typing special characters can disrupt Bib\TeX's alphabetization. The recommended way of typing special characters is shown in Table~\ref{tab:accents}.
+
+% Please ensure that Bib\TeX{} records contain DOIs or URLs when possible, and for all the ACL materials that you reference.
+% Use the \verb|doi| field for DOIs and the \verb|url| field for URLs.
+% If a Bib\TeX{} entry has a URL or DOI field, the paper title in the references section will appear as a hyperlink to the paper, using the hyperref \LaTeX{} package.
+
+\section*{Limitations}
+The synthesis stage requires labeled training instances to score answer failure and check evidence preservation; it is not directly applicable to unlabeled queries. The trained RALM, however, requires no reference answer at prediction time. Offline synthesis relies on Qwen3-32B and repeated model calls. We do not report the full synthesis cost or peak memory, and the inference times in Table~\ref{tab:inference_time} do not account for these resources. Trainable baselines follow their published recipes, so offline training compute is not equalized.
+
+The evaluation covers short-form open-domain QA, difficult contexts, and naturally retrieved distractors. Results are conditioned on a common context-sufficiency filter and should not be interpreted as performance on unfiltered retrieval outputs. They do not establish robustness to corpus poisoning, malicious evidence injection, targeted retrieval attacks, long-form generation, multimodal RAG, or complete retrieval failure. Finally, passing an LLM-based evidence check is not a guarantee of factual preservation: judge errors can admit invalid rewrites or reject valid ones. Human validation and stronger entailment checks remain important for assessing this limitation.
+
+
+% \section*{Acknowledgments}
+
+% This document has been adapted
+% by Steven Bethard, Ryan Cotterell and Rui Yan
+% from the instructions for earlier ACL and NAACL proceedings, including those for
+% ACL 2019 by Douwe Kiela and Ivan Vuli\'{c},
+% NAACL 2019 by Stephanie Lukin and Alla Roskovskaya,
+% ACL 2018 by Shay Cohen, Kevin Gimpel, and Wei Lu,
+% NAACL 2018 by Margaret Mitchell and Stephanie Lukin,
+% Bib\TeX{} suggestions for (NA)ACL 2017/2018 from Jason Eisner,
+% ACL 2017 by Dan Gildea and Min-Yen Kan,
+% NAACL 2017 by Margaret Mitchell,
+% ACL 2012 by Maggie Li and Michael White,
+% ACL 2010 by Jing-Shin Chang and Philipp Koehn,
+% ACL 2008 by Johanna D. Moore, Simone Teufel, James Allan, and Sadaoki Furui,
+% ACL 2005 by Hwee Tou Ng and Kemal Oflazer,
+% ACL 2002 by Eugene Charniak and Dekang Lin,
+% and earlier ACL and EACL formats written by several people, including
+% John Chen, Henry S. Thompson and Donald Walker.
+% Additional elements were taken from the formatting instructions of the \emph{International Joint Conference on Artificial Intelligence} and the \emph{Conference on Computer Vision and Pattern Recognition}.
+
+% % Bibliography entries for the entire Anthology, followed by custom entries
+% \bibliography{anthology,custom}
+% Custom bibliography entries only
+\bibliography{custom}
+
+\appendix
+
+\section{Experiment Details}
+
+\label{sec:appendix_a}
+We compare against both unadapted instruction-tuned backbones and methods designed specifically for robustness to retrieval noise. Every model is evaluated on the same retained examples and receives the same retrieved contexts.
+
+\paragraph{Vanilla LLMs.}
+We use the following models without additional robustness training:
+\begin{itemize}
+    \item \textbf{LLaMA-3.2-3B-Instruct} and \textbf{LLaMA-3-8B};
+    \item \textbf{Qwen3-4B} and \textbf{Qwen3-8B}.
+\end{itemize}
+They measure how much robustness arises from the base model alone under the common RAG pipeline \cite{llama3,qwen3}.
+
+\paragraph{Robust RAG Methods.}
+We reproduce three training-based defenses with LLaMA-3.2-3B-Instruct as the common target backbone:
+\begin{itemize}
+    \item \textbf{RbFT} improves defect detection and utility extraction through robust fine-tuning \cite{RbFT};
+    \item \textbf{ATM} uses multi-agent adversarial tuning \cite{ATM}; and
+    \item \textbf{RAAT} trains on adaptively selected retrieval-noise patterns \cite{RAAT}.
+\end{itemize}
+For each, we follow the training-set size and LoRA configuration specified by its original paper. We do not use evaluation examples to adapt any baseline.
+
+\subsection{Implementation Details}
+We use Qwen3-32B as the frozen attacker and LLaMA-3.2-3B-Instruct as the target RALM. We randomly sample $3{,}000$ instances from the \emph{training splits} of NQ and HotpotQA at a $2{:}1$ ratio. For each instance, the retriever returns the top-$5$ passages; the same context-sufficiency criterion used in evaluation selects source contexts judged to support the reference answer. The initial pool size is $n=4$, each round generates $N=4$ new candidates, and the default number of synthesis iterations is $3$. The reward weights are fixed to $\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$ for every dataset.
+
+We fine-tune the target with LLaMA-Factory \cite{llamafactory}. LoRA is applied to all linear layers with rank $r=16$ and scaling factor $\alpha=32$. Training uses \texttt{bfloat16}, AdamW, a cosine learning-rate schedule, an initial learning rate of $5\times10^{-5}$, and $3$ epochs. The per-device batch size is $2$ with $8$ gradient-accumulation steps, and the maximum sequence length is $4096$. FlashAttention~2 is enabled \cite{flashattention}.
+\label{sec:appendix}
+
+\section{Synthesis Procedure}
+\label{sec:synthesis_algorithm}
+For clarity, the complete offline procedure for one labeled training instance is:
+\begin{enumerate}
+    \item Retrieve $\mathcal{R}_{K}(q)$ and serialize all $K$ passages with $q$ and $y^*$.
+    \item Sample $n$ full-context rewrites from the frozen attacker for initial evaluation.
+    \item Evaluate each newly generated candidate $d_i$ by obtaining a response $y_i$ from the frozen target RALM conditioned on $(q,d_i)$. Compute the answer, uncertainty, and evidence rewards and store the evaluated candidate and its score in the cache.
+    \item Select the highest- and lowest-reward cached contexts, generate pair-specific textual feedback, and sample $N$ new full-context rewrites. Evaluate these candidates as in the preceding step before using them in further comparisons or final selection. Repeat the refinement according to the synthesis-iteration setting.
+    \item After synthesis, identify the cached candidates that pass the final evidence check. Only these candidates are eligible; select a highest-reward candidate $d^*$ from this subset.
+    \item Collect the selected $(q,d^*,y^*)$ triples and train the target RALM with supervised LoRA fine-tuning. Held-out answer generation then uses the trained target with no synthesis calls or parameter updates.
+\end{enumerate}
+
+
+\end{document}
