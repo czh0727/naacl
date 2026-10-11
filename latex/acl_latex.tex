@@ -39,7 +39,7 @@
 %
 % and set <dim> to something 5cm or larger.
 
-\title{Robust Retrieval-Augmented Generation via Textual-Gradient-Guided Adversarial Data Synthesis}
+\title{Robust Retrieval-Augmented Generation via Textual-Gradient-Guided Adversarial Context Synthesis}
 
 % Author information can be set in various styles:
 % For several authors from the same institution:
@@ -109,30 +109,63 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-Retrieval-augmented language models (RALMs) can fail even when the retrieved context contains sufficient evidence: relevant information may be scattered, paraphrased, or obscured by distractors. We propose textual-gradient-guided adversarial data synthesis to improve robustness to these difficult contexts. A frozen attacker rewrites the complete retrieved context, and a frozen target RALM answers from each candidate. Contrasting high- and low-reward candidates produces natural-language feedback that guides subsequent rewrites. For each training query, we select the highest-reward candidate that passes an evidence-preservation check and use it for supervised LoRA fine-tuning. Synthesis uses labeled training data; the resulting model performs ordinary retrieval-augmented inference without the attacker or parameter updates. Across five question-answering evaluation sets, the method achieves the highest reported EM and F1 point estimates among the compared systems and improves performance under increasing retrieval noise. Ablations show that the benefits of textual feedback vary across datasets. These results support the use of target-model feedback for constructing difficult, answer-supporting training contexts. Code is available at \url{https://anonymous.4open.science/r/TTT_ttlr}.
+Retrieval-Augmented Generation (RAG) often fails due to scattered evidence or heavy dilution by noise, whereas existing offline static fine-tuning paradigms struggle to capture dynamic, query-specific retrieval failures in real-world scenarios. To bridge this gap, we propose a textual-gradient-guided adversarial context synthesis framework for robustness enhancement. By dynamically generating and optimizing factually correct yet highly challenging adversarial contexts through an iterative generation–evaluation–feedback process, our approach achieves query- and retrieval-aware robustness improvement without relying on predefined noise construction rules. Extensive experiments demonstrate that our method substantially improves the robustness and accuracy of retrieval-augmented language models (RALMs) across varying noise levels and out-of-domain settings. Code is available at \url{https://anonymous.4open.science/r/TTT_ttlr}.
 \end{abstract}
 
+
+
 \section{Introduction}
-Retrieval-augmented generation (RAG) conditions a language model on external documents to support knowledge-intensive tasks such as open-domain question answering \cite{chen-etal-2017-reading,lewis2020retrieval,guu2020retrieval}. This design can address gaps in a model's parametric knowledge, but retrieving relevant information does not ensure that the model will use it correctly \cite{ji2023survey,gao2023retrieval}.
+
+Large language models (LLMs) have achieved remarkable success in natural language understanding and generation tasks \cite{Brown2020Language,Ali2023Performance,achiam2023gpt}. 
+However, in knowledge-intensive scenarios, LLMs still suffer from several limitations, including hallucination, outdated knowledge, and insufficient domain coverage \cite{ji2023survey,zhang2023language}. 
+Retrieval-Augmented Generation (RAG) mitigates these issues by incorporating external documents as contextual knowledge and has become a widely adopted framework for open-domain question answering and knowledge-intensive applications \cite{lewis2020retrieval,guu2020retrieval,fan2024survey}.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{1.pdf}
   \caption{Sensitivity analysis on Natural Questions. Left: performance as retrieval depth $k$ increases. Right: performance as answer-supporting documents are progressively replaced by low-ranked distractors.}
   \label{fig:retrieval_sensitivity}
 \end{figure}
-A generator can overlook supporting evidence when it is scattered across passages, expressed indirectly, or surrounded by semantically related distractors \cite{cuconasu2024power,shi2023large,yoran2023making}. Figure~\ref{fig:retrieval_sensitivity} illustrates how answer quality changes with retrieval depth and the replacement of high-ranked passages by lower-ranked distractors. These settings motivate a distinction between the availability of evidence and the generator's ability to use it.
 
-Existing methods improve context use through relevance reasoning, robustness-oriented fine-tuning, and adaptive adversarial training \cite{CoN,instructrag,RbFT,RAAT,ATM}. We investigate a complementary question: can natural-language feedback from a target model guide the construction of difficult training contexts while preserving the evidence needed to answer the query? The key design choice is to optimize the context itself, using the target model's responses to guide successive rewrites before fine-tuning.
+Despite its effectiveness, the performance of RAG systems is highly dependent on the quality and usability of retrieved contexts. 
+Previous studies have shown that retrieval relevance alone is insufficient to guarantee reliable generation: even when retrieved documents contain the correct answer, models may still fail to extract useful evidence when the context contains distracting information, noisy documents, or complex semantic interference \cite{shi2023large,yoran2023making}. 
+As retrieval noise increases, RAG models often experience significant performance degradation, indicating that retrieval defects affect not only relevance but also the stability of model reasoning \cite{cuconasu2024power,amiraz-etal-2025-distracting}.
 
-We propose \emph{textual-gradient-guided adversarial data synthesis}. A frozen attacker rewrites the complete top-$K$ context for each training query. A frozen target RALM answers from each rewrite, and a reward combines answer failure, response uncertainty, and an evidence-preservation signal. Contrasting high- and low-reward candidates yields a natural-language critique, or textual gradient \cite{textgrad}, that guides the next synthesis round. For each query, the highest-reward candidate that passes the evidence check is paired with the reference answer for supervised LoRA fine-tuning.
 
-The synthesis loop operates only on labeled training instances and keeps model parameters fixed. Its outputs become an offline supervision set for the target RALM. At inference, held-out queries follow the usual retrieve-then-read pipeline without the attacker or parameter updates.
+To improve the robustness of RAG systems, existing studies mainly focus on offline training strategies, including noise-aware fine-tuning, adversarial training, and context-aware reasoning mechanisms \cite{RbFT,RAAT,ATM,CoN}. 
+However, these approaches usually rely on manually designed perturbations or predefined noise distributions, which limits their ability to cover the diverse and evolving failure patterns encountered in real-world retrieval systems. 
+In particular, retrieval failures are often query-specific and context-dependent, making it difficult for a fixed training distribution to expose all potential weaknesses of RAG models.
 
-Our contributions are threefold:
+
+This motivates a fundamental question: 
+\textit{Can we automatically discover context-specific weaknesses of RAG models and synthesize targeted training data according to model feedback?}
+
+Recent studies suggest that model behaviors and generation feedback provide valuable signals for improving generation quality and optimization \cite{textgrad,tpo}. 
+Instead of exhaustively enumerating possible retrieval failures during data construction, leveraging feedback from model responses under challenging contexts provides a promising direction for generating more effective robustness training data.
+
+
+In this work, we propose a \textbf{Textual-Gradient-Guided Adversarial Context Synthesis Framework} for robustness enhancement of Retrieval-Augmented Language Models (RALMs). 
+The key idea is to dynamically synthesize challenging adversarial contexts based on model feedback and transform the discovered weaknesses into effective robustness supervision.
+
+Specifically, we introduce a frozen attacker model that generates candidate adversarial contexts conditioned on the query and original retrieval context. 
+These adversarial contexts preserve factual correctness while making the evidence more difficult for RALMs to reliably utilize. 
+Through an iterative \textbf{generation--evaluation--feedback process}, we evaluate the generated contexts based on model behaviors, convert preference signals into natural-language \textbf{textual gradients}, and use them to guide subsequent adversarial context optimization.
+
+
+After iterative optimization, the generated adversarial contexts are filtered and incorporated into robust fine-tuning, enabling RALMs to better handle noisy and difficult retrieval scenarios. 
+Unlike existing robustness methods that depend on predefined noise construction rules, our framework dynamically identifies and synthesizes query-specific challenging contexts according to model feedback, providing more effective supervision for improving RAG robustness.
+
+Here, adversarial contexts refer to semantically modified retrieval contexts that preserve supporting evidence while increasing reasoning difficulty. 
+They are designed to simulate challenging retrieval conditions, such as evidence dilution and distracting information, rather than malicious attacks such as corpus poisoning or targeted retrieval manipulation.
+
+
+The main contributions of this work are summarized as follows:
+
 \begin{itemize}
-    \item We formulate full-context adversarial data synthesis as a search for rewrites that challenge a target RALM while passing an answer-evidence check.
-    \item We develop a textual-gradient optimization loop that converts target-model failures into actionable feedback for refining full-context rewrites, without updating either model during synthesis.
-    \item We evaluate the resulting RALM on five question-answering evaluation sets and under progressively increasing retrieval noise, and analyze the effects of contrastive selection, synthesis iterations, and reward components.
+    \item We propose a textual-gradient-guided adversarial context synthesis framework for RAG robustness enhancement, which dynamically constructs query-specific adversarial contexts through an iterative generation--evaluation--feedback process.
+
+    \item We introduce textual gradients as optimization signals for adversarial context synthesis, enabling the generation of factually correct yet highly challenging contexts without relying on predefined noise construction rules.
+
+    \item Extensive experiments on multiple open-domain question answering benchmarks demonstrate that our method substantially improves the robustness and accuracy of RALMs under varying retrieval noise levels and out-of-domain settings.
 \end{itemize}
 \section{Related Work}
 
