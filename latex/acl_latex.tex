@@ -109,7 +109,8 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-Retrieval-Augmented Generation (RAG) often fails due to scattered evidence or heavy dilution by noise, whereas existing offline static fine-tuning paradigms struggle to capture dynamic, query-specific retrieval failures in real-world scenarios. To bridge this gap, we propose a textual-gradient-guided adversarial context synthesis framework for robustness enhancement. By dynamically generating and optimizing factually correct yet highly challenging adversarial contexts through an iterative generation–evaluation–feedback process, our approach achieves query- and retrieval-aware robustness improvement without relying on predefined noise construction rules. Extensive experiments demonstrate that our method substantially improves the robustness and accuracy of retrieval-augmented language models (RALMs) across varying noise levels and out-of-domain settings. Code is available at \url{https://anonymous.4open.science/r/TTT_ttlr}.
+Retrieval-Augmented Generation (RAG) systems often fail when retrieved contexts contain scattered evidence, distracting information, or severe noise, while existing offline robustness training methods struggle to capture diverse and query-specific retrieval failures in real-world scenarios. To address this limitation, we propose TAGS (Textual-Gradient-Guided Adversarial Context Synthesis), a framework for improving the robustness of Retrieval-Augmented Language Models (RALMs) through dynamic adversarial context synthesis. TAGS generates factually correct yet highly challenging adversarial contexts that preserve answer-supporting evidence while increasing the difficulty for RALMs to exploit such evidence. Through an iterative generation--evaluation--feedback process, TAGS converts model feedback into textual gradients to guide adversarial context optimization without relying on predefined noise construction rules. The optimized adversarial contexts are then used for robust fine-tuning, enabling RALMs to better handle noisy and difficult retrieval scenarios. 
+Extensive experiments on multiple open-domain question answering benchmarks demonstrate that TAGS substantially improves the robustness and accuracy of RALMs under varying retrieval noise levels and out-of-domain settings. Code is available at \url{https://anonymous.4open.science/r/TTT_ttlr}.
 \end{abstract}
 
 
@@ -118,13 +119,15 @@ Retrieval-Augmented Generation (RAG) often fails due to scattered evidence or he
 
 Large language models (LLMs) have achieved remarkable success in natural language understanding and generation tasks \cite{Brown2020Language,Ali2023Performance,achiam2023gpt}. 
 However, in knowledge-intensive scenarios, LLMs still suffer from several limitations, including hallucination, outdated knowledge, and insufficient domain coverage \cite{ji2023survey,zhang2023language}. 
-Retrieval-Augmented Generation (RAG) mitigates these issues by incorporating external documents as contextual knowledge and has become a widely adopted framework for open-domain question answering and knowledge-intensive applications \cite{lewis2020retrieval,guu2020retrieval,fan2024survey}.
 \begin{figure}[htbp]
   \centering
   \includegraphics[width=\linewidth]{1.pdf}
   \caption{Sensitivity analysis on Natural Questions. Left: performance as retrieval depth $k$ increases. Right: performance as answer-supporting documents are progressively replaced by low-ranked distractors.}
   \label{fig:retrieval_sensitivity}
 \end{figure}
+Retrieval-Augmented Generation (RAG) mitigates these issues by incorporating external documents as contextual knowledge and has become a widely adopted framework for open-domain question answering and knowledge-intensive applications \cite{lewis2020retrieval,guu2020retrieval,fan2024survey}.
+
+
 
 Despite its effectiveness, the performance of RAG systems is highly dependent on the quality and usability of retrieved contexts. 
 Previous studies have shown that retrieval relevance alone is insufficient to guarantee reliable generation: even when retrieved documents contain the correct answer, models may still fail to extract useful evidence when the context contains distracting information, noisy documents, or complex semantic interference \cite{shi2023large,yoran2023making}. 
@@ -136,37 +139,41 @@ However, these approaches usually rely on manually designed perturbations or pre
 In particular, retrieval failures are often query-specific and context-dependent, making it difficult for a fixed training distribution to expose all potential weaknesses of RAG models.
 
 
-This motivates a fundamental question: 
+This motivates a fundamental question:
 \textit{Can we automatically discover context-specific weaknesses of RAG models and synthesize targeted training data according to model feedback?}
 
-Recent studies suggest that model behaviors and generation feedback provide valuable signals for improving generation quality and optimization \cite{textgrad,tpo}. 
-Instead of exhaustively enumerating possible retrieval failures during data construction, leveraging feedback from model responses under challenging contexts provides a promising direction for generating more effective robustness training data.
+
+Recent studies suggest that model behaviors and generation feedback provide valuable signals for improving text generation and optimization \cite{textgrad,tpo}. 
+Instead of exhaustively enumerating possible retrieval failures during data construction, leveraging feedback from model responses under challenging contexts provides a promising direction for constructing more effective robustness training data.
 
 
-In this work, we propose a \textbf{Textual-Gradient-Guided Adversarial Context Synthesis Framework} for robustness enhancement of Retrieval-Augmented Language Models (RALMs). 
-The key idea is to dynamically synthesize challenging adversarial contexts based on model feedback and transform the discovered weaknesses into effective robustness supervision.
+In this work, we propose TAGS (Textual-Gradient-Guided Adversarial Context Synthesis), a framework for improving the robustness of Retrieval-Augmented Language Models (RALMs). 
+The key idea of TAGS is to dynamically synthesize challenging adversarial contexts based on model feedback and transform the discovered weaknesses into effective robustness supervision.
 
-Specifically, we introduce a frozen attacker model that generates candidate adversarial contexts conditioned on the query and original retrieval context. 
-These adversarial contexts preserve factual correctness while making the evidence more difficult for RALMs to reliably utilize. 
-Through an iterative \textbf{generation--evaluation--feedback process}, we evaluate the generated contexts based on model behaviors, convert preference signals into natural-language \textbf{textual gradients}, and use them to guide subsequent adversarial context optimization.
+
+Specifically, TAGS introduces a frozen attacker model to generate candidate adversarial contexts conditioned on the query and the original retrieval context. 
+These adversarial contexts preserve answer-supporting evidence while making such evidence more difficult for RALMs to reliably utilize. 
+Through an iterative \textbf{generation--evaluation--feedback process}, TAGS evaluates candidate contexts according to the target RALM's behaviors, converts preference signals into natural-language \textbf{textual gradients}, and uses them to guide subsequent adversarial context optimization.
 
 
 After iterative optimization, the generated adversarial contexts are filtered and incorporated into robust fine-tuning, enabling RALMs to better handle noisy and difficult retrieval scenarios. 
-Unlike existing robustness methods that depend on predefined noise construction rules, our framework dynamically identifies and synthesizes query-specific challenging contexts according to model feedback, providing more effective supervision for improving RAG robustness.
+Unlike existing robustness methods that depend on predefined noise construction rules, TAGS dynamically identifies and synthesizes query-specific challenging contexts according to model feedback, providing more effective supervision for improving RAG robustness.
 
-Here, adversarial contexts refer to semantically modified retrieval contexts that preserve supporting evidence while increasing reasoning difficulty. 
-They are designed to simulate challenging retrieval conditions, such as evidence dilution and distracting information, rather than malicious attacks such as corpus poisoning or targeted retrieval manipulation.
+
+In this work, \emph{adversarial contexts} refer to semantically modified retrieval contexts that preserve answer-supporting evidence while increasing the difficulty for the target RALM to exploit such evidence. 
+They are designed to simulate challenging retrieval conditions, such as evidence dilution, information reordering, and distracting content, rather than malicious attacks such as corpus poisoning, malicious evidence injection, or targeted attacks on retrieval systems.
 
 
 The main contributions of this work are summarized as follows:
 
 \begin{itemize}
-    \item We propose a textual-gradient-guided adversarial context synthesis framework for RAG robustness enhancement, which dynamically constructs query-specific adversarial contexts through an iterative generation--evaluation--feedback process.
+    \item We propose TAGS (Textual-Gradient-Guided Adversarial Context Synthesis), a framework for RAG robustness enhancement that dynamically constructs query-specific adversarial contexts through an iterative generation--evaluation--feedback process.
 
     \item We introduce textual gradients as optimization signals for adversarial context synthesis, enabling the generation of factually correct yet highly challenging contexts without relying on predefined noise construction rules.
 
-    \item Extensive experiments on multiple open-domain question answering benchmarks demonstrate that our method substantially improves the robustness and accuracy of RALMs under varying retrieval noise levels and out-of-domain settings.
+    \item Extensive experiments on multiple open-domain question answering benchmarks demonstrate that TAGS substantially improves the robustness and accuracy of RALMs under varying retrieval noise levels and out-of-domain settings.
 \end{itemize}
+
 \section{Related Work}
 
 \subsection{Robustness of Retrieval-Augmented Generation}
@@ -176,21 +183,28 @@ RetRobust improves robustness by training with both relevant and irrelevant cont
 Other approaches leverage note-based relevance reasoning \cite{CoN} or instruction and rationale tuning \cite{instructrag}. 
 RbFT enhances robustness through defect-aware training with sampled or synthetically corrupted contexts \cite{RbFT}. 
 RAAT adopts adaptive adversarial training with noise recognition \cite{RAAT}, while ATM improves robustness through iterative optimization between an attacker model and an answer generator \cite{ATM}. 
-Different from these approaches that mainly construct robustness signals through predefined perturbations or adversarial training objectives, our method performs textual-gradient-guided adversarial context synthesis and uses the synthesized contexts for robust fine-tuning of the target RALM.
+Different from these approaches that mainly rely on predefined perturbations or adversarial training objectives, TAGS dynamically synthesizes query-specific adversarial contexts through textual gradients and uses the synthesized contexts for robust fine-tuning of the target RALM.
 
 
 \subsection{Textual Feedback and Adversarial Context Synthesis}
 
 Recent studies demonstrate that natural-language feedback can serve as an effective optimization signal for text generation and refinement. 
 TextGrad introduces textual gradients to optimize text-valued variables through language-model-generated feedback \cite{textgrad}. 
-Test-Time Preference Optimization further explores iterative textual feedback for improving model responses without conventional parameter updates \cite{tpo}. 
+Test-Time Preference Optimization further explores iterative textual feedback for improving model responses without conventional parameter updates \cite{tpo}.
 
-Different from previous methods that optimize generated responses or model behaviors, we apply textual feedback to a new optimization target: adversarial contexts for robustness data synthesis. 
+Different from previous methods that optimize generated responses or model behaviors, TAGS applies textual feedback to a new optimization target: adversarial contexts for robustness enhancement. 
 Specifically, the target RALM's responses provide evaluation signals for ranking candidate contexts, while contrastive feedback between candidates guides subsequent adversarial context optimization. 
-Parameter learning occurs only after synthesis through supervised fine-tuning on the selected adversarial contexts.
+Parameter learning occurs only after context synthesis, through supervised fine-tuning on the selected adversarial contexts.
 
 
 \section{Method}
+\subsection{Problem Definition}
+
+Given a query $q$, retrieved context $\mathcal{R}(q)$, and reference answer $y^*$, TAGS aims to construct adversarial contexts that improve the robustness of Retrieval-Augmented Language Models (RALMs).
+
+Here, adversarial contexts refer to semantically modified retrieval contexts that preserve answer-supporting evidence while increasing the difficulty for the target RALM to exploit such evidence.
+
+Different from malicious retrieval attacks, such as corpus poisoning or targeted retrieval manipulation, TAGS focuses on simulating realistic retrieval failures, including evidence dilution, information reordering, and distracting contexts.
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\linewidth]{latex/framework_优化.pdf}
