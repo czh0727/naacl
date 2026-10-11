@@ -493,9 +493,14 @@ No attacker model, textual gradient generation, reference answer, or additional 
 
 \subsection{Tasks, Datasets, and RAG Setup}
 \label{sec:exp_settings}
-We evaluate on Natural Questions (NQ) \cite{kwiatkowski2019natural}, PopQA \cite{popqa}, HotpotQA \cite{hotpotqa}, 2WikiMultiHopQA \cite{2wqa}, and the DAE difficult-context evaluation set. DAE is held out from synthesis, candidate selection, and model updates. All systems use a common retrieve-then-read pipeline implemented with FlashRAG \cite{Flash}, the \texttt{e5-base-v2} dense retriever, and top-$K$ retrieval with $K=5$. We report exact match (EM) and token-level F1.
 
-Following prior work, we apply one common context-sufficiency filter and evaluate every method on exactly the same retained instances \cite{joren2024sufficient}. The filter removes examples for which the retrieved context does not support the reference answer, allowing the analysis to isolate whether the generator can use available evidence rather than whether retrieval found it. No retained evaluation instance is used for synthesis or fine-tuning. Table~\ref{tab:dataset_stats} reports the resulting sizes.
+We evaluate TAGS on five open-domain question answering benchmarks: Natural Questions (NQ) \cite{kwiatkowski2019natural}, PopQA \cite{popqa}, HotpotQA \cite{hotpotqa}, 2WikiMultiHopQA \cite{2wqa}, and the DAE difficult-context evaluation set.
+
+DAE is strictly held out from adversarial context synthesis, candidate selection, and model optimization.
+
+All methods use the same retrieve-then-read pipeline implemented with FlashRAG \cite{Flash}, the \texttt{e5-base-v2} dense retriever, and top-$K$ retrieval with $K=5$. We report Exact Match (EM) and token-level F1.
+
+The target RALM is initialized with LLaMA-3.2-3B-Instruct. During adversarial context synthesis, TAGS uses Qwen3-32B as the frozen auxiliary attacker model. The auxiliary model is only used for offline context synthesis and is not involved during inference.
 
 \begin{table}[b]
 \centering
@@ -515,9 +520,12 @@ Following prior work, we apply one common context-sufficiency filter and evaluat
 \label{tab:dataset_stats}
 \end{table}
 
-\subsection{Training and Evaluation Protocol}
-Adversarial context synthesis uses $3{,}000$ labeled instances sampled exclusively from the \emph{training} splits of NQ and HotpotQA. Synthesis prompts, reward computation, textual feedback, candidate selection, and LoRA updates are confined to those instances. Validation and test examples are excluded from synthesis and fine-tuning. The reward weights and optimization settings are fixed across datasets and are not selected using test performance. All reported held-out answers are generated after training, without further parameter updates.
+\subsection{Retrieval Difficulty Construction and Robustness Evaluation}
 
+To evaluate robustness under challenging retrieval scenarios, we construct retrieval difficulty settings by progressively replacing highly ranked documents with lower-ranked retrieved distractors.
+For each query, we retrieve the top-50 documents and keep the number of input documents fixed at five.We gradually replace high-ranked documents with documents from ranks 47--50, producing five difficulty levels.
+These distractors are naturally retrieved documents under the same retriever. They remain semantically related to the query but are less likely to contain answer-supporting evidence.
+Therefore, this evaluation measures robustness to realistic retrieval difficulty, such as evidence dilution and distracting contexts, rather than synthetic malicious attacks.
 \subsection{Retrieval Noise Construction and Robustness Evaluation Settings}
 \begin{table}[b]
   \centering
@@ -576,11 +584,16 @@ RAAT         & 0.382 & 0.483 & 0.704 & 0.747 & 0.161 & 0.275 & 0.394 & 0.500 & 0
 \end{table*}
 
 \subsection{Baselines}
-\label{subsec:baselines}
-We compare against representative instruction-tuned LLaMA and Qwen models \cite{llama3,qwen3} and three robustness-oriented RAG methods: RbFT \cite{RbFT}, ATM \cite{ATM}, and RAAT \cite{RAAT}. All rows share the retriever, retrieved inputs, answer prompt, decoding procedure, context-sufficiency filter, and metrics. The robustness-training methods use LLaMA-3.2-3B-Instruct as the target backbone; the standalone LLaMA and Qwen rows are backbone controls and therefore retain their stated model sizes.
 
-For trainable baselines, we follow the number of training examples and LoRA recipe reported by the corresponding original paper, including rank, scaling factor, learning rate, batch size, epochs, maximum sequence length, optimizer, and scheduler. This protocol compares complete published methods under a controlled test pipeline; it does not claim equal offline training compute. Appendix~\ref{sec:appendix_a} provides further configuration details.
+We compare TAGS with two categories of baselines.
 
+First, we include instruction-tuned backbone models, including LLaMA-3.2-3B-Instruct, LLaMA-3-8B, Qwen3-4B, and Qwen3-8B, which measure the robustness of standard RALM pipelines without additional robustness training.
+
+Second, we compare against representative robustness-oriented RAG methods, including RbFT \cite{RbFT}, ATM \cite{ATM}, and RAAT \cite{RAAT}.
+
+All methods share the same retriever, retrieved contexts, answer prompts, decoding settings, evaluation metrics, and context-sufficiency filtering procedure.
+
+For TAGS, the auxiliary attacker model is only used during offline adversarial context synthesis and is not involved in inference.
 
 \section{Results and Analysis}
 We organize the analysis around five research questions:
