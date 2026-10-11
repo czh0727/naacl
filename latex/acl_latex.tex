@@ -266,7 +266,7 @@ r(d_i,y_i,y^*)=
 &+\gamma r_{\mathrm{evid}}(q,d_i,y^*).
 \end{aligned}
 \end{equation}
-
+For simplicity, we denote the reward of a candidate context $d_i$ as $r(d_i)$ hereafter.
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\linewidth]{latex/v3.pdf}
@@ -343,7 +343,7 @@ g_{\mathrm{text}}^{(t)}
 G(q,\mathcal{R}_{K}(q),d_t^+,d_t^-),
 \end{equation}
 
-where the textual gradient describes why $d_t^+$ is more challenging than $d_t^-$ while maintaining factual correctness.
+where the textual gradient describes why $d_t^+$ is more challenging than $d_t^-$ while maintaining factual correctness. Unlike numerical gradients that update model parameters, textual gradients provide natural-language optimization directions for refining adversarial contexts.
 
 Conditioned on the current best context and textual gradient, the attacker generates new candidates:
 
