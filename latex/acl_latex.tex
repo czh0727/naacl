@@ -170,13 +170,25 @@ The main contributions of this work are summarized as follows:
 \section{Related Work}
 
 \subsection{Robustness of Retrieval-Augmented Generation}
-Irrelevant or difficult-to-use passages can degrade answer generation, and semantically related distractors can be particularly harmful \cite{shi2023large,cuconasu2024power,amiraz-etal-2025-distracting}. RetRobust trains with relevant and irrelevant contexts \cite{yoran2023making}; other approaches use note-based relevance reasoning \cite{CoN} or instruction and rationale tuning \cite{instructrag}. RbFT combines defect detection and answer generation using sampled or synthetically corrupted contexts \cite{RbFT}. RAAT uses adaptive adversarial training with noise recognition \cite{RAAT}, while ATM iteratively optimizes an attacker and an answer generator \cite{ATM}. Our method instead uses textual feedback to revise contexts with frozen models, then fine-tunes the answer generator on the selected examples.
 
-\subsection{Textual Feedback and Data Synthesis}
-TextGrad uses natural-language feedback to optimize text-valued variables \cite{textgrad}. Test-Time Preference Optimization applies iterative textual feedback to revise model responses at inference \cite{tpo}. We apply this feedback principle to a different variable: a retrieved context used to construct training data. The target RALM's responses inform candidate ranking, and contrasting candidates guides subsequent context rewrites. Parameter learning occurs only after synthesis, through supervised fine-tuning on the selected contexts.
+Irrelevant or difficult-to-use retrieval contexts can substantially degrade answer generation, and semantically related but misleading contexts can be particularly harmful \cite{shi2023large,cuconasu2024power,amiraz-etal-2025-distracting}. 
+RetRobust improves robustness by training with both relevant and irrelevant contexts to mitigate the impact of distracting retrieval results \cite{yoran2023making}. 
+Other approaches leverage note-based relevance reasoning \cite{CoN} or instruction and rationale tuning \cite{instructrag}. 
+RbFT enhances robustness through defect-aware training with sampled or synthetically corrupted contexts \cite{RbFT}. 
+RAAT adopts adaptive adversarial training with noise recognition \cite{RAAT}, while ATM improves robustness through iterative optimization between an attacker model and an answer generator \cite{ATM}. 
+Different from these approaches that mainly construct robustness signals through predefined perturbations or adversarial training objectives, our method performs textual-gradient-guided adversarial context synthesis and uses the synthesized contexts for robust fine-tuning of the target RALM.
 
-\subsection{Positioning and Scope}
-Here, \emph{adversarial} describes context rewrites designed to make answer-supporting evidence harder for the target RALM to use. The intended changes include paraphrase, reordering, and evidence dilution, subject to an evidence-preservation check. Our experiments evaluate noisy and difficult retrieval contexts; they do not establish robustness to corpus poisoning, malicious evidence injection, or targeted attacks on the retriever.
+
+\subsection{Textual Feedback and Adversarial Context Synthesis}
+
+Recent studies demonstrate that natural-language feedback can serve as an effective optimization signal for text generation and refinement. 
+TextGrad introduces textual gradients to optimize text-valued variables through language-model-generated feedback \cite{textgrad}. 
+Test-Time Preference Optimization further explores iterative textual feedback for improving model responses without conventional parameter updates \cite{tpo}. 
+
+Different from previous methods that optimize generated responses or model behaviors, we apply textual feedback to a new optimization target: adversarial contexts for robustness data synthesis. 
+Specifically, the target RALM's responses provide evaluation signals for ranking candidate contexts, while contrastive feedback between candidates guides subsequent adversarial context optimization. 
+Parameter learning occurs only after synthesis through supervised fine-tuning on the selected adversarial contexts.
+
 
 \section{Method}
 \begin{figure*}[t]
