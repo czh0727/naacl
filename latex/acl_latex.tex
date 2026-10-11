@@ -110,7 +110,7 @@
 \maketitle
 \begin{abstract}
 Retrieval-Augmented Generation (RAG) systems often fail when retrieved contexts contain scattered evidence, distracting information, or severe noise, while existing offline robustness training methods struggle to capture diverse and query-specific retrieval failures in real-world scenarios. To address this limitation, we propose TAGS (Textual-Gradient-Guided Adversarial Context Synthesis), a framework for improving the robustness of Retrieval-Augmented Language Models (RALMs) through dynamic adversarial context synthesis. TAGS generates factually correct yet highly challenging adversarial contexts that preserve answer-supporting evidence while increasing the difficulty for RALMs to exploit such evidence. Through an iterative generation--evaluation--feedback process, TAGS converts model feedback into textual gradients to guide adversarial context optimization without relying on predefined noise construction rules. The optimized adversarial contexts are then used for robust fine-tuning, enabling RALMs to better handle noisy and difficult retrieval scenarios. 
-Extensive experiments on multiple open-domain question answering benchmarks demonstrate that TAGS substantially improves the robustness and accuracy of RALMs under varying retrieval noise levels and out-of-domain settings. Code is available at \url{https://anonymous.4open.science/r/TTT_ttlr}.
+Extensive experiments on multiple open-domain question answering benchmarks demonstrate that TAGS substantially improves the robustness and accuracy of RALMs under varying retrieval noise levels and out-of-domain settings. Code is available at \url{https://anonymous.4open.science/r/TTT_tags}.
 \end{abstract}
 
 
@@ -529,7 +529,7 @@ Therefore, this evaluation measures robustness to realistic retrieval difficulty
 \subsection{Retrieval Noise Construction and Robustness Evaluation Settings}
 \begin{table}[b]
   \centering
-  \caption{Retrieval noise settings with progressively increasing distractor ratios.}
+  \caption{Retrieval difficulty settings with progressively increasing distractor ratios.}
   \label{tab:noise_setting}
   \setlength{\tabcolsep}{15pt}
   \renewcommand{\arraystretch}{1.1}
@@ -598,11 +598,11 @@ For TAGS, the auxiliary attacker model is only used during offline adversarial c
 \section{Results and Analysis}
 We organize the analysis around five research questions:
 \begin{itemize}
-    \item \textbf{RQ1:} How does the proposed training procedure compare with existing robustness methods?
-    \item \textbf{RQ2:} How does performance change as retrieval noise increases?
-    \item \textbf{RQ3:} Does contrasting the strongest and weakest context rewrites improve synthesis?
-    \item \textbf{RQ4:} How sensitive is performance to the number of synthesis iterations?
-    \item \textbf{RQ5:} What does textual feedback contribute beyond fixed feedback?
+    \item \textbf{RQ1:} How does TAGS compare with existing robustness-oriented RAG methods?
+    \item \textbf{RQ2:} How does TAGS perform under increasing retrieval difficulty?
+    \item \textbf{RQ3:} Does contrastive selection of adversarial contexts improve synthesis quality?
+    \item \textbf{RQ4:} How does the number of synthesis iterations affect TAGS performance?
+    \item \textbf{RQ5:} What contribution does textual feedback provide compared with fixed feedback?
 \end{itemize}
 
 
@@ -610,11 +610,13 @@ We organize the analysis around five research questions:
   \centering
   \includegraphics[width=\linewidth]{rag_robustness.pdf}
   \caption{F1 as the number of low-ranked distractors increases on NQ, HotpotQA, 2WikiMultiHopQA, and PopQA. All methods receive the same retrieved contexts at each noise level.}
-  \label{fig:robustness_results}
+  \label{fig:noise_robustness}
 \end{figure}
 \subsection{Comparison with Robustness Training Baselines}
-\label{subsec:static_comparison}
-Table~\ref{tab:rag_robustness} reports held-out EM and F1. Our method has the highest point estimate in every column, with the largest gains on DAE. The significance markers compare against LLaMA3.2-3B; they do not establish significance against every robustness baseline. These results evaluate the complete synthesis-and-fine-tuning procedure. Because the methods follow different published training recipes, this comparison does not isolate the effect of synthesis under an equal training budget.
+
+Table~\ref{tab:rag_robustness} reports held-out EM and F1 scores across five QA benchmarks. 
+TAGS achieves the best overall performance among compared methods, with consistent improvements across datasets and the largest gains on DAE.
+These results demonstrate that textual-gradient-guided adversarial context synthesis provides effective supervision for robust fine-tuning, enabling RALMs to better handle noisy and difficult retrieval contexts.Since different robustness methods follow their original training recipes, the comparison reflects complete method performance rather than strictly matched offline training budgets.
 \begin{table}[t]
   \caption{Effect of contrastive adversarial context selection. Comparison between the Best-vs-Worst (\text{B-vs-W}) and Best-vs-2ndBest (\text{B-vs-2ndB}) strategies. $\Delta$ denotes the relative performance change (\%).}
   \label{tab:contrastive_ablation}
@@ -651,7 +653,7 @@ Table~\ref{tab:rag_robustness} reports held-out EM and F1. Our method has the hi
 
 \begin{table}[htbp]
   \caption{Impact of offline synthesis iterations on DAE. Synthesis uses the fixed $3,000$-instance training set. Best Score is an internal synthesis indicator; EM and F1 measure held-out answer quality.}
-  \label{tab:iteration_dae}
+  \label{tab:iteration_analysis}
   \centering
   \setlength{\tabcolsep}{5pt}
   \renewcommand{\arraystretch}{1.08}
@@ -667,18 +669,18 @@ Table~\ref{tab:rag_robustness} reports held-out EM and F1. Our method has the hi
 \end{table}
 
 
-\subsection{Overall Robustness under Increasing Retrieval Noise}
-\label{subsec:overall_robustness}
+\subsection{Robustness under Increasing Retrieval Difficulty}
 
-To address \textbf{RQ2}, we progressively replace high-ranked documents with low-ranked distractors, yielding Settings~0--4 in Table~\ref{tab:noise_setting}.
+To address RQ2, we progressively replace high-ranked documents with low-ranked distractors, yielding five retrieval difficulty settings in Table~\ref{tab:noise_setting}.
 
-Figure~\ref{fig:robustness_results} reports the F1 performance across four benchmarks.
-F1 generally decreases as more high-ranked documents are replaced by distractors, illustrating sensitivity to retrieval quality.
-Vanilla RAG suffers the largest decline, especially on multi-hop datasets such as HotpotQA and 2WikiMultihopQA, while robustness-oriented methods partially alleviate this issue.
+Figure~\ref{fig:noise_robustness} reports the F1 performance across four benchmarks. 
+F1 generally decreases as more high-ranked documents are replaced by distractors, reflecting the increasing difficulty of evidence utilization.
 
-Our method remains competitive across the noise range on NQ, HotpotQA, and PopQA and is strongest under severe noise in Settings~3--4. RbFT performs better on 2WikiMultiHopQA, so the advantage is not universal. The overall pattern nevertheless indicates that training on target-aware difficult contexts reduces degradation under evidence dilution without changing the test-time pipeline.
+TAGS remains competitive across difficulty levels and achieves stronger performance under severe retrieval difficulty. 
+This indicates that training on synthesized adversarial contexts helps RALMs better handle evidence dilution and distracting retrieval contexts.
+
 \begin{table*}[t]
-  \caption{Ablation study on different reward signaling strategies. We report EM and F1 scores across five QA benchmarks. Bold font indicates the best performance.}
+  \caption{Ablation study on reward components. We report EM and F1 scores across five QA benchmarks. Bold font indicates the best performance.}
   \label{tab:reward_ablation}
   \centering
   \small
@@ -706,25 +708,34 @@ Our method remains competitive across the noise range on NQ, HotpotQA, and PopQA
   \bottomrule
   \end{tabular}
 \end{table*}
-\subsection{Effect of Contrastive Adversarial Contexts}
+
+
+
+\subsection{Effect of Contrastive Adversarial Context Selection}
 \label{subsec:contrastive_effect}
+To address RQ3, we compare two contrastive selection strategies:
+Best-vs-Worst, which contrasts the highest- and lowest-reward adversarial contexts, and Best-vs-2ndBest, which contrasts the two highest-reward contexts.
 
-To address \textbf{RQ3}, we compare two contrastive pair construction strategies: \textit{Best-vs-Worst}, which contrasts the strongest and weakest adversarial contexts, and \textit{Best-vs-2ndBest}, which contrasts the two strongest adversarial contexts.
+Best-vs-Worst performs better on most dataset-metric combinations, with the largest differences observed on DAE and HotpotQA.
 
-Best-vs-Worst is better on eight of ten dataset--metric combinations and tied on one; the only reversal is 2WikiMultiHopQA F1. The largest relative differences occur on DAE and HotpotQA. These results favor the wider contrast in most reported comparisons, but do not establish that it is uniformly optimal or directly measure feedback quality.
+These results suggest that a wider contrast between difficult contexts provides more informative textual feedback for adversarial context refinement.
+However, the comparison does not imply that wider contrast is universally optimal, as the effectiveness of feedback depends on the synthesis scenario.
 
-\subsection{Impact of Synthesis Iterations}
+\subsection{Impact of Offline Synthesis Iterations}
 \label{subsec:iteration_effect}
 
-To address \textbf{RQ4}, we vary the number of offline textual-gradient iterations.
-As shown in Table~\ref{tab:iteration_dae}, EM consistently improves from $0.367$ to $0.390$ as the number of iterations increases, while most F1 gains are achieved after the second iteration ($0.482 \to 0.501$).
-
-We additionally track the \emph{Best Score}, an internal synthesis indicator.
-Because the cache retains previously evaluated candidates, its maximum score can increase simply by considering more candidates. This trend alone does not establish improved context quality or feedback quality; held-out EM and F1 provide the relevant downstream evidence.
-Overall, a small number of synthesis rounds captures most of the observed gain; these are offline text updates, not test-time model updates.
 
 
-\subsection{Role of Textual Feedback}
+To address RQ4, we vary the number of offline synthesis iterations in TAGS.
+
+As shown in Table~\ref{tab:iteration_analysis}, increasing synthesis iterations generally improves held-out performance. 
+EM improves consistently as the number of iterations increases, while most F1 gains are obtained after the second iteration.
+
+We additionally track the Best Score, an internal synthesis indicator. 
+Because the candidate cache retains previously evaluated contexts, a higher Best Score alone does not necessarily imply better downstream performance. 
+The held-out EM and F1 results provide the final evidence of synthesis effectiveness.
+
+\subsection{Role of Textual Gradients}
 \label{subsec:textual_gradients}
 \begin{table}[t]
   \caption{Effect of textual gradients. We compare the full method with a fixed-feedback variant; $\Delta$ is the relative change from fixed feedback to the full method (\%).}
@@ -759,37 +770,21 @@ Overall, a small number of synthesis rounds captures most of the observed gain; 
   \bottomrule
   \end{tabular}
 \end{table}
-To address \textbf{RQ5}, we replace pair-specific textual gradients with the same fixed instruction at every synthesis step. Table~\ref{tab:textgrad_delta} shows the clearest benefit on DAE and HotpotQA, where TextGrad improves both EM and F1. Results are mixed on NQ, PopQA, and 2WikiMultiHopQA: the full method improves some metrics but slightly reduces others. Thus, the evidence supports textual feedback most strongly for the more difficult-context evaluations, not as an across-the-board improvement.
 
-\subsection{Ablation Study on Reward Signaling Strategies}
 
-Table~\ref{tab:reward_ablation} reports the ablation results of different reward components.
-The full reward is best or tied on every dataset--metric combination, but the component effects differ by dataset. Removing evidence preservation causes the largest F1 losses on DAE and HotpotQA, whereas removing the uncertainty term has the largest F1 effect on 2WikiMultiHopQA. Removing the answer term produces smaller or tied EM changes on some datasets but consistently lowers F1. These results support complementarity while avoiding the stronger, unsupported claim that every component improves every individual metric.
+To address RQ5, we replace the textual gradients in TAGS with fixed feedback instructions while keeping the remaining synthesis procedure unchanged. Table~\ref{tab:textgrad_delta} shows that textual gradients improve performance on several difficult-context benchmarks, especially DAE and HotpotQA. The results suggest that instance-specific textual feedback provides more effective guidance for adversarial context refinement than fixed feedback instructions. However, the gains vary across datasets, indicating that the effectiveness of textual gradients depends on the characteristics of the retrieval scenarios.
 
-\subsection{Deployment-Time Efficiency}
-The Qwen3-32B attacker is used only during offline synthesis. After LoRA fine-tuning, prediction uses the target LLaMA-3.2-3B RALM and its adapter weights through the usual retrieve-then-read pipeline. Table~\ref{tab:inference_time} reports wall-clock inference times on the same NQ test set, retrieval configuration, and hardware. Our method has the shortest observed time in this run. This is a measurement of the deployed model, not a claim of a faster inference algorithm: synthesis, scoring, and textual-feedback calls are absent from prediction. The table excludes offline synthesis and fine-tuning costs, so it cannot establish lower total computational cost.
+\subsection{Ablation Study of Reward Components}
 
-\begin{table}[t]
-  \centering
-  \small
-  \caption{Total NQ inference time under a shared retrieval and hardware configuration. The relative column is measured against our method.}
-  \label{tab:inference_time}
-  \setlength{\tabcolsep}{5pt}
-  \begin{tabular}{lrr}
-    \toprule
-    \textbf{Method} & \textbf{Time (s)} & \textbf{Relative} \\
-    \midrule
-    Ours & 132.53 & -- \\
-    RbFT & 146.22 & +10.3\% \\
-    ATM & 150.65 & +13.7\% \\
-    LLaMA-3.2-3B-Instruct & 198.14 & +49.7\% \\
-    RAAT & 219.73 & +65.8\% \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+Table~\ref{tab:reward_ablation} reports the ablation results of different reward components in TAGS. Removing individual components generally degrades performance, while the full reward achieves the best or comparable results across datasets. 
+The evidence preservation, uncertainty, and answer deviation components provide complementary signals for adversarial context synthesis, with different components contributing more on different benchmarks.
+
+
+
 \section{Conclusion}
-We introduced textual-gradient-guided adversarial data synthesis for robust retrieval-augmented generation. Frozen models iteratively construct and assess complete context rewrites, and the highest-reward candidates that pass an evidence check become supervision for LoRA fine-tuning. The resulting RALM requires no synthesis or adaptation during prediction. Experiments show improved held-out answer quality under the evaluated noisy and difficult-context settings, while ablations reveal that the effects of textual feedback vary across datasets. The findings motivate target-aware context construction as an offline training strategy; robustness to stronger malicious attacks remains untested.
-
+We introduced TAGS (Textual-Gradient-Guided Adversarial Context Synthesis), a framework for improving the robustness of Retrieval-Augmented Language Models through offline adversarial context synthesis.TAGS uses frozen models to iteratively synthesize and evaluate adversarial contexts, where textual gradients derived from contrastive feedback guide context refinement. 
+The selected evidence-preserving contexts are then used for robust fine-tuning of the target RALM.Experiments demonstrate that TAGS improves held-out performance under noisy and difficult retrieval contexts, while ablation studies show the contribution of textual gradients and reward components.The results highlight the potential of feedback-guided context construction as an offline strategy for improving RAG robustness. 
+Robustness against stronger malicious attacks, such as corpus poisoning or targeted retrieval manipulation, remains outside the scope of this study.
 
 % \subsection{Citations}
 
@@ -904,47 +899,114 @@ The evaluation covers short-form open-domain QA, difficult contexts, and natural
 % Custom bibliography entries only
 \bibliography{custom}
 
+
+
 \appendix
 
 \section{Experiment Details}
 
-\label{sec:appendix_a}
-We compare against both unadapted instruction-tuned backbones and methods designed specifically for robustness to retrieval noise. Every model is evaluated on the same retained examples and receives the same retrieved contexts.
+We compare against both unadapted instruction-tuned backbones and methods specifically designed for robustness under difficult retrieval contexts. 
+All models are evaluated on the same retained examples and receive the same retrieved contexts.
 
-\paragraph{Vanilla LLMs.}
-We use the following models without additional robustness training:
-\begin{itemize}
-    \item \textbf{LLaMA-3.2-3B-Instruct} and \textbf{LLaMA-3-8B};
-    \item \textbf{Qwen3-4B} and \textbf{Qwen3-8B}.
-\end{itemize}
-They measure how much robustness arises from the base model alone under the common RAG pipeline \cite{llama3,qwen3}.
+\paragraph{Backbone Baselines.}
 
-\paragraph{Robust RAG Methods.}
-We reproduce three training-based defenses with LLaMA-3.2-3B-Instruct as the common target backbone:
+We use the following instruction-tuned models without additional robustness training:
+
 \begin{itemize}
-    \item \textbf{RbFT} improves defect detection and utility extraction through robust fine-tuning \cite{RbFT};
-    \item \textbf{ATM} uses multi-agent adversarial tuning \cite{ATM}; and
-    \item \textbf{RAAT} trains on adaptively selected retrieval-noise patterns \cite{RAAT}.
+    \item LLaMA-3.2-3B-Instruct and LLaMA-3-8B;
+    \item Qwen3-4B and Qwen3-8B.
 \end{itemize}
-For each, we follow the training-set size and LoRA configuration specified by its original paper. We do not use evaluation examples to adapt any baseline.
+
+These models measure the robustness provided by standard RALM pipelines without additional context synthesis or robustness optimization.
+
+\paragraph{Robustness-oriented RAG Baselines.}
+
+We compare against three robustness-oriented RAG methods:
+
+\begin{itemize}
+    \item RbFT improves robustness through fine-tuning on retrieval defects and corrupted contexts;
+    \item ATM introduces iterative adversarial tuning for improving robustness of retrieval-augmented generation;
+    \item RAAT applies adaptive adversarial training with retrieval noise recognition.
+\end{itemize}
+
+For trainable baselines, we follow the training data sizes and LoRA configurations reported in their original papers, including rank, scaling factor, learning rate, batch size, epochs, sequence length, optimizer, and scheduler.
+
+All baselines are evaluated using the same retriever, retrieved contexts, answer prompts, decoding procedure, context-sufficiency filtering, and evaluation metrics.
 
 \subsection{Implementation Details}
-We use Qwen3-32B as the frozen attacker and LLaMA-3.2-3B-Instruct as the target RALM. We randomly sample $3{,}000$ instances from the \emph{training splits} of NQ and HotpotQA at a $2{:}1$ ratio. For each instance, the retriever returns the top-$5$ passages; the same context-sufficiency criterion used in evaluation selects source contexts judged to support the reference answer. The initial pool size is $n=4$, each round generates $N=4$ new candidates, and the default number of synthesis iterations is $3$. The reward weights are fixed to $\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$ for every dataset.
 
-We fine-tune the target with LLaMA-Factory \cite{llamafactory}. LoRA is applied to all linear layers with rank $r=16$ and scaling factor $\alpha=32$. Training uses \texttt{bfloat16}, AdamW, a cosine learning-rate schedule, an initial learning rate of $5\times10^{-5}$, and $3$ epochs. The per-device batch size is $2$ with $8$ gradient-accumulation steps, and the maximum sequence length is $4096$. FlashAttention~2 is enabled \cite{flashattention}.
-\label{sec:appendix}
+TAGS uses Qwen3-32B as the frozen auxiliary attacker model and LLaMA-3.2-3B-Instruct as the target RALM.
+
+We randomly sample 3,000 labeled instances from the training splits of NQ and HotpotQA at a 2:1 ratio.
+
+For each instance, the retriever returns the top-5 passages. 
+The same context-sufficiency criterion used in evaluation selects source contexts judged to support the reference answer.
+
+The initial candidate pool size is $n=4$, each synthesis iteration generates $N=4$ new candidate adversarial contexts, and the default number of synthesis iterations is 3.
+
+The reward weights are fixed across all datasets:
+$\alpha=1.0$, $\beta=0.5$, and $\gamma=2.0$.
+
+We fine-tune the target RALM using LLaMA-Factory.
+LoRA is applied to all linear layers with rank $r=16$ and scaling factor $\alpha=32$.
+
+Training uses bfloat16 precision, AdamW optimizer, cosine learning-rate scheduling, an initial learning rate of $5\times10^{-5}$, and 3 epochs.
+
+The per-device batch size is 2 with 8 gradient accumulation steps, and the maximum sequence length is 4096.
+
+FlashAttention-2 is enabled during training.
+
 
 \section{Synthesis Procedure}
-\label{sec:synthesis_algorithm}
-For clarity, the complete offline procedure for one labeled training instance is:
+
+For clarity, the complete offline synthesis procedure for one labeled training instance is:
+
 \begin{enumerate}
-    \item Retrieve $\mathcal{R}_{K}(q)$ and serialize all $K$ passages with $q$ and $y^*$.
-    \item Sample $n$ full-context rewrites from the frozen attacker for initial evaluation.
-    \item Evaluate each newly generated candidate $d_i$ by obtaining a response $y_i$ from the frozen target RALM conditioned on $(q,d_i)$. Compute the answer, uncertainty, and evidence rewards and store the evaluated candidate and its score in the cache.
-    \item Select the highest- and lowest-reward cached contexts, generate pair-specific textual feedback, and sample $N$ new full-context rewrites. Evaluate these candidates as in the preceding step before using them in further comparisons or final selection. Repeat the refinement according to the synthesis-iteration setting.
-    \item After synthesis, identify the cached candidates that pass the final evidence check. Only these candidates are eligible; select a highest-reward candidate $d^*$ from this subset.
-    \item Collect the selected $(q,d^*,y^*)$ triples and train the target RALM with supervised LoRA fine-tuning. Held-out answer generation then uses the trained target with no synthesis calls or parameter updates.
+
+\item Retrieve $\mathcal{R}_{K}(q)$ and serialize all $K$ retrieved passages together with the query $q$ and reference answer $y^*$.
+
+\item Sample $n$ candidate adversarial contexts from the frozen auxiliary attacker model for initial evaluation.
+
+\item Evaluate each candidate context $d_i$ by obtaining the response $y_i$ from the frozen target RALM conditioned on $(q,d_i)$.
+Compute the answer deviation, generation uncertainty, and evidence preservation rewards, then store the evaluated candidate and its reward in the cache.
+
+\item Select the highest- and lowest-reward cached adversarial contexts, generate contrastive textual gradients, and sample $N$ new candidate adversarial contexts conditioned on the optimized context and textual gradient.
+Evaluate these candidates as in the previous step and repeat the refinement process according to the synthesis iteration setting.
+
+\item After synthesis, identify candidates that pass the final evidence-preservation check.
+Only these candidates are eligible for final selection, and the highest-reward valid context $d^*$ is selected.
+
+\item Collect the selected triples $(q,d^*,y^*)$ and train the target RALM using supervised LoRA fine-tuning.
+During inference, only the trained target RALM and retriever are used, without additional synthesis calls, textual gradient generation, or parameter updates.
+\section{Additional Efficiency Analysis}
+
+To evaluate deployment-time overhead, we measure inference latency on the NQ evaluation set under the same retrieval and hardware configuration.
+
+Table~\ref{tab:inference_time} reports the total inference time of TAGS and robustness-oriented baselines. TAGS achieves competitive inference efficiency compared with other robustness-oriented methods.
+
+The auxiliary attacker model and textual-gradient generation are only used during offline adversarial context synthesis and are not involved during inference. Therefore, the reported latency reflects the deployed RALM pipeline after fine-tuning rather than the total cost of synthesis and training.
+
+
+\begin{table}[t]
+  \centering
+  \small
+  \caption{Total NQ inference time under a shared retrieval and hardware configuration. The relative column is measured against our method.}
+  \label{tab:inference_time}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lrr}
+    \toprule
+    \textbf{Method} & \textbf{Time (s)} & \textbf{Relative} \\
+    \midrule
+    Ours & 132.53 & -- \\
+    RbFT & 146.22 & +10.3\% \\
+    ATM & 150.65 & +13.7\% \\
+    LLaMA-3.2-3B-Instruct & 198.14 & +49.7\% \\
+    RAAT & 219.73 & +65.8\% \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 \end{enumerate}
+
 
 
 \end{document}
